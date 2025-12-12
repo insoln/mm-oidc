@@ -1,0 +1,67 @@
+{
+  "id": "com.mm.oidc",
+  "name": "Mattermost OIDC Bridge",
+  "description": "Hello-world server stub following Mattermost docs; replace with full OIDC implementation.",
+  "version": "0.0.1",
+  "min_server_version": "9.0.0",
+  "server": {
+    "executable": "server/dist/plugin-linux-amd64"
+  },
+  "webapp": {
+    "bundle_path": "webapp/dist/main.js"
+  },
+  "settings_schema": {
+    "header": "Configure how Mattermost connects to your OIDC provider.",
+    "footer": "Only enable \"Allow Insecure Issuer\" for local development stacks.",
+    "settings": [
+      {
+        "key": "issuer_url",
+        "display_name": "Issuer URL",
+        "type": "text",
+        "help_text": "Full issuer/realm URL reported by your IdP (e.g. https://keycloak.example.com/realms/master).",
+        "placeholder": "https://keycloak.example.com/realms/master",
+        "default": ""
+      },
+      {
+        "key": "allow_insecure_issuer",
+        "display_name": "Allow Insecure Issuer",
+        "type": "bool",
+        "help_text": "Permit http:// issuers for local testing. Always leave disabled in production.",
+        "default": false
+      },
+      {
+        "key": "client_id",
+        "display_name": "Client ID",
+        "type": "text",
+        "help_text": "OIDC client identifier configured in your provider.",
+        "placeholder": "mm-oidc",
+        "default": ""
+      },
+      {
+        "key": "client_secret",
+        "display_name": "Client Secret",
+        "type": "text",
+        "help_text": "Confidential client secret issued by your provider.",
+        "placeholder": "********",
+        "default": "",
+        "secret": true
+      },
+      {
+        "key": "redirect_url",
+        "display_name": "Redirect URL",
+        "type": "text",
+        "help_text": "Callback URL registered with the provider.",
+        "placeholder": "http://localhost:8065/plugins/com.mm.oidc/callback",
+        "default": "http://localhost:8065/plugins/com.mm.oidc/callback"
+      },
+      {
+        "key": "scopes",
+        "display_name": "Scopes",
+        "type": "text",
+        "help_text": "Space or comma separated scopes requested during authorization.",
+        "placeholder": "openid profile email",
+        "default": "openid profile email"
+      }
+    ]
+  }
+}

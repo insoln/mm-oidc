@@ -1,0 +1,8 @@
+/build/plugins/
+/server/dist/
+/webapp/node_modules/
+/webapp/dist/
+/webapp/.yarn/
+/webapp/.pnp.*
+/webapp/.parcel-cache/
+.DS_Store
