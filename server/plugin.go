@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"html/template"
 	"net/http"
@@ -289,6 +290,49 @@ func (p *Plugin) writeFriendlyError(w http.ResponseWriter, status int, title, me
 </html>`, liveTitle, liveTitle, liveMessage)
 }
 
+func friendlyProvisioningError(err error) (int, string, string, bool) {
+	if err == nil {
+		return 0, "", "", false
+	}
+
+	var appErr *model.AppError
+	if errors.As(err, &appErr) && isLastAdminDemotionError(appErr) {
+		message := "Mattermost cannot remove system administrator access from the final admin account. Promote another system administrator or keep this account as an admin before trying again."
+		return http.StatusForbidden, "Cannot remove last System Admin", message, true
+	}
+
+	return 0, "", "", false
+}
+
+func isLastAdminDemotionError(appErr *model.AppError) bool {
+	if appErr == nil {
+		return false
+	}
+
+	ids := []string{
+		"api.user.demote_last_admin.app_error",
+		"api.user.demote_last_admin",
+	}
+	for _, candidate := range ids {
+		if strings.EqualFold(strings.TrimSpace(appErr.Id), candidate) {
+			return true
+		}
+	}
+
+	haystack := []string{appErr.Message, appErr.DetailedError, appErr.Error()}
+	for _, text := range haystack {
+		if text == "" {
+			continue
+		}
+		lower := strings.ToLower(text)
+		if strings.Contains(lower, "cannot demote last system admin") {
+			return true
+		}
+	}
+
+	return false
+}
+
 func (p *Plugin) handleLogin(w http.ResponseWriter, r *http.Request) {
 	cfg := p.getConfiguration()
 	metadata := p.getMetadata()
@@ -391,7 +435,11 @@ func (p *Plugin) handleCallback(w http.ResponseWriter, r *http.Request) {
 	user, err := p.provisionUser(profile)
 	if err != nil {
 		p.API.LogError("failed to provision user", "state", state, "error", err.Error())
-		p.writeFriendlyError(w, http.StatusInternalServerError, "We couldn't finish signing you in", "Mattermost was unable to create or update your account. Please try again or contact your system administrator.")
+		if status, title, message, handled := friendlyProvisioningError(err); handled {
+			p.writeFriendlyError(w, status, title, message)
+		} else {
+			p.writeFriendlyError(w, http.StatusInternalServerError, "We couldn't finish signing you in", "Mattermost was unable to create or update your account. Please try again or contact your system administrator.")
+		}
 		return
 	}
 

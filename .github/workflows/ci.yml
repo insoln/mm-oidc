@@ -1,0 +1,105 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  server-tests:
+    name: Go Server Tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: server
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+          cache: true
+
+      - name: Run go test
+        run: go test ./...
+
+  webapp-tests:
+    name: Webapp Tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: webapp
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'yarn'
+          cache-dependency-path: webapp/yarn.lock
+
+      - name: Enable Corepack
+        run: corepack enable
+        working-directory: .
+
+      - name: Install dependencies
+        run: yarn install --inline-builds
+
+      - name: Run webapp tests
+        run: yarn test
+
+  dev-stack-smoke:
+    name: Dev Stack Bootstrap
+    runs-on: ubuntu-latest
+    needs:
+      - server-tests
+      - webapp-tests
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'yarn'
+          cache-dependency-path: webapp/yarn.lock
+
+      - name: Enable Corepack
+        run: corepack enable
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+          cache: true
+
+      - name: Bootstrap dev stack
+        run: ./scripts/dev-up.sh
+
+      - name: Check container status
+        run: |
+          set -euo pipefail
+          ENV_FILE="deploy/env/dev.env"
+          COMPOSE_FILE="deploy/docker-compose.dev.yml"
+          STATUS_JSON=$(docker compose --env-file "${ENV_FILE}" -f "${COMPOSE_FILE}" ps --format json)
+          echo "${STATUS_JSON}" | jq '.[] | {Name, State, Health}'
+          FAILED_COUNT=$(echo "${STATUS_JSON}" | jq '[.[] | select(.State != "running")] | length')
+          if [[ "${FAILED_COUNT}" -gt 0 ]]; then
+            echo "Non-running containers detected:"
+            echo "${STATUS_JSON}" | jq '[.[] | select(.State != "running") | {Name, State, Health, ExitCode}]'
+            docker compose --env-file "${ENV_FILE}" -f "${COMPOSE_FILE}" logs
+            exit 1
+          fi
+
+      - name: Tear down dev stack
+        if: always()
+        run: ./scripts/dev-down.sh
