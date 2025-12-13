@@ -39,16 +39,16 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Enable Corepack
+        run: corepack enable
+        working-directory: .
+
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '20'
           cache: 'yarn'
           cache-dependency-path: webapp/yarn.lock
-
-      - name: Enable Corepack
-        run: corepack enable
-        working-directory: .
 
       - name: Install dependencies
         run: yarn install --inline-builds
@@ -66,15 +66,15 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Enable Corepack
+        run: corepack enable
+
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '20'
           cache: 'yarn'
           cache-dependency-path: webapp/yarn.lock
-
-      - name: Enable Corepack
-        run: corepack enable
 
       - name: Set up Go
         uses: actions/setup-go@v5
