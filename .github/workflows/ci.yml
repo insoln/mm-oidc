@@ -90,7 +90,7 @@ jobs:
           set -euo pipefail
           ENV_FILE="deploy/env/dev.env"
           COMPOSE_FILE="deploy/docker-compose.dev.yml"
-          STATUS_JSON=$(docker compose --env-file "${ENV_FILE}" -f "${COMPOSE_FILE}" ps --format json)
+          STATUS_JSON=$(docker compose --env-file "${ENV_FILE}" -f "${COMPOSE_FILE}" ps --format json | jq -cs '.')
           echo "${STATUS_JSON}" | jq '.[] | {Name, State, Health}'
           FAILED_COUNT=$(echo "${STATUS_JSON}" | jq '[.[] | select(.State != "running")] | length')
           if [[ "${FAILED_COUNT}" -gt 0 ]]; then
