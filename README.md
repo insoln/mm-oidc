@@ -4,7 +4,7 @@ Mattermost plugin that enables single sign-on with arbitrary OpenID Connect prov
 
 ## Installation & Configuration
 
-The plugin ships as a standard Mattermost plugin archive (`mm-oidc.tar.gz`). You can download a prebuilt (https://github.com/insoln/mm-oidc/releases)[release] from GitHub or build it yourself with `make package` (see the Packaging section below).
+The plugin is distributed as a standard Mattermost archive. Download it from [GitHub Releases](https://github.com/insoln/mm-oidc/releases) or build it with `make package` (see Packaging below). Local builds output `build/plugins/mm-oidc.tar.gz`.
 
 ### 1. Install the plugin in Mattermost
 
