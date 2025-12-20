@@ -1,8 +1,8 @@
 {
   "id": "com.mm.oidc",
   "name": "Mattermost OIDC Bridge",
-  "description": "Hello-world server stub following Mattermost docs; replace with full OIDC implementation.",
-  "version": "0.0.1",
+  "description": "Production-ready OIDC connector for Mattermost with Keycloak-first defaults and hardened security controls.",
+  "version": "0.0.2",
   "min_server_version": "9.0.0",
   "server": {
     "executable": "server/dist/plugin-linux-amd64"
@@ -11,14 +11,14 @@
     "bundle_path": "webapp/dist/main.js"
   },
   "settings_schema": {
-    "header": "Configure how Mattermost connects to your OIDC provider.",
-    "footer": "Only enable \"Allow Insecure Issuer\" for local development stacks.",
+    "header": "Define how Mattermost discovers, authenticates, and provisions users through your OIDC provider.",
+    "footer": "Never enable \"Allow Insecure Issuer\" outside disposable dev or QA environments.",
     "settings": [
       {
         "key": "issuer_url",
         "display_name": "Issuer URL",
         "type": "text",
-        "help_text": "Full issuer/realm URL reported by your IdP (e.g. https://keycloak.example.com/realms/master).",
+        "help_text": "Paste the exact issuer/realm URL reported by your IdP discovery document (e.g. https://keycloak.example.com/realms/master).",
         "placeholder": "https://keycloak.example.com/realms/master",
         "default": ""
       },
@@ -26,14 +26,14 @@
         "key": "allow_insecure_issuer",
         "display_name": "Allow Insecure Issuer",
         "type": "bool",
-        "help_text": "Permit http:// issuers for local testing. Always leave disabled in production.",
+        "help_text": "Temporarily permit http:// issuers for local testing with self-signed certificates.",
         "default": false
       },
       {
         "key": "client_id",
         "display_name": "Client ID",
         "type": "text",
-        "help_text": "OIDC client identifier configured in your provider.",
+        "help_text": "Client identifier configured for Mattermost inside your provider.",
         "placeholder": "mm-oidc",
         "default": ""
       },
@@ -41,7 +41,7 @@
         "key": "client_secret",
         "display_name": "Client Secret",
         "type": "text",
-        "help_text": "Confidential client secret issued by your provider.",
+        "help_text": "Confidential client secret issued by your provider for the client above.",
         "placeholder": "********",
         "default": "",
         "secret": true
@@ -50,7 +50,7 @@
         "key": "redirect_url",
         "display_name": "Redirect URL",
         "type": "text",
-        "help_text": "Callback URL registered with the provider.",
+        "help_text": "Callback URL you registered with the provider. It must exactly match the client configuration.",
         "placeholder": "http://localhost:8065/plugins/com.mm.oidc/callback",
         "default": "http://localhost:8065/plugins/com.mm.oidc/callback"
       },
@@ -58,7 +58,7 @@
         "key": "scopes",
         "display_name": "Scopes",
         "type": "text",
-        "help_text": "Space or comma separated scopes requested during authorization.",
+        "help_text": "Space- or comma-separated scopes requested during authorization (include roles if you map admin roles).",
         "placeholder": "openid profile email",
         "default": "openid profile email"
       }
