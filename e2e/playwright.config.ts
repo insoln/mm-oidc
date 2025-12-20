@@ -1,4 +1,9 @@
 import { defineConfig, devices } from '@playwright/test';
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const currentDir = dirname(fileURLToPath(import.meta.url));
+const repoRoot = resolve(currentDir, '..');
 
 /**
  * Playwright configuration for mm-oidc E2E tests
@@ -28,7 +33,7 @@ export default defineConfig({
 
   // Run dev stack before tests if not already running
   webServer: process.env.SKIP_DEV_STACK ? undefined : {
-    command: `bash -c "cd ${__dirname}/.. && ./scripts/dev-up.sh"`,
+    command: `bash -c "cd '${repoRoot}' && ./scripts/dev-up.sh"`,
     url: 'http://localhost:8065',
     timeout: 180 * 1000, // 3 minutes for stack to come up
     reuseExistingServer: !process.env.CI,
