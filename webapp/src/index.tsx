@@ -1,10 +1,10 @@
 import type {PluginRegistry} from './types/mattermost';
-import LoginPanel from './components/LoginPanel';
 import {pluginId} from './utils/routes';
 
 class OIDCPlugin {
-  initialize(registry: PluginRegistry) {
-    registry.registerRootComponent(LoginPanel);
+  initialize(_registry: PluginRegistry) {
+    // Plugin functionality is provided by the Go backend at /plugins/com.mm.oidc/
+    // Future admin console settings UI can be registered here via registerAdminConsoleCustomSetting
   }
 }
 
