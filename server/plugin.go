@@ -174,6 +174,8 @@ func (p *Plugin) handleHealth(w http.ResponseWriter, _ *http.Request) {
 
 func (p *Plugin) handlePublicConfig(w http.ResponseWriter, _ *http.Request) {
 	cfg := p.getConfiguration()
+	// Note: issuer_url is intentionally public - it's already visible on the landing page
+	// and needed by the frontend to provide context to users. It contains no secrets.
 	payload := map[string]interface{}{
 		"show_login_button": cfg.ShowLoginButton,
 		"issuer_url":        cfg.IssuerURL,

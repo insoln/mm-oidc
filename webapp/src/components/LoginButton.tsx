@@ -27,16 +27,13 @@ const LoginButton = () => {
 
     window.addEventListener('popstate', handleRouteChange);
     
-    // For SPA navigation, also listen to click events on links
-    const observer = new MutationObserver(checkLoginPage);
-    observer.observe(document.body, {
-      childList: true,
-      subtree: true,
-    });
+    // For SPA navigation, check periodically (lightweight approach)
+    // Mattermost uses pushState for navigation, which doesn't trigger popstate
+    const intervalId = setInterval(checkLoginPage, 1000);
 
     return () => {
       window.removeEventListener('popstate', handleRouteChange);
-      observer.disconnect();
+      clearInterval(intervalId);
     };
   }, []);
 
@@ -48,9 +45,21 @@ const LoginButton = () => {
         if (response.ok) {
           const data = await response.json();
           setConfig(data);
+        } else {
+          console.warn('Failed to fetch OIDC plugin config:', response.status);
+          // On error, default to showing button (fail-open for better UX)
+          setConfig({
+            show_login_button: true,
+            issuer_url: '',
+          });
         }
       } catch (error) {
         console.error('Failed to fetch OIDC plugin config:', error);
+        // On network error, default to showing button
+        setConfig({
+          show_login_button: true,
+          issuer_url: '',
+        });
       }
     };
 

@@ -74,6 +74,23 @@ Click **Save** and press **Start Login** on the plugin landing page to validate 
 
 > 💡 Tip: `scripts/dev-up.sh` + `scripts/dev-bootstrap.sh` perform every step above automatically for the Docker-based dev stack. Refer to `docs/DEV_ENV.md` if you prefer automation over manual configuration.
 
+### 4. Login Integration
+
+The plugin provides two methods for users to authenticate:
+
+1. **Login Button (Default)**: A "Sign in with OIDC" button automatically appears on the Mattermost login page. Users click it to start the OIDC flow. No configuration required - works out of the box!
+
+2. **Infrastructure Auto-Redirect (Advanced)**: Configure your reverse proxy/ingress to automatically redirect `/login` to the OIDC flow. Recommended for enterprise deployments with mandatory SSO.
+
+See **[docs/LOGIN_INTEGRATION_GUIDE.md](docs/LOGIN_INTEGRATION_GUIDE.md)** for:
+- Detailed configuration instructions
+- nginx/Traefik/HAProxy examples
+- Comparison of methods
+- Troubleshooting guide
+- Migration strategies
+
+See **[docs/LOGIN_INTEGRATION_RESEARCH.md](docs/LOGIN_INTEGRATION_RESEARCH.md)** for technical research findings and limitations.
+
 ### Limitations: Login/Logout Intercepts
 
 Mattermost plugins cannot override the core `/login` or `/logout` pages; only the official Enterprise SAML/OIDC features hook those routes. This plugin exposes its own landing page under `/plugins/com.mm.oidc/` and issues redirects from there, so users must click **Start Login** (or an equivalent CTA injected by the webapp) instead of using the stock forms.
