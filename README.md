@@ -98,6 +98,7 @@ Mattermost plugins cannot override the core `/login` or `/logout` pages; only th
 ├── build/                 # Versioned plugin bundles and release notes
 ├── deploy/                # IaC assets (Helm charts, Kubernetes manifests)
 ├── docs/                  # Architecture, runbooks, threat models
+├── e2e/                   # Playwright E2E tests
 ├── scripts/               # Developer automation (lint, package, e2e)
 ├── server/                # Go backend plugin (Mattermost RPC entrypoints)
 ├── webapp/                # React/TypeScript webapp bundle
