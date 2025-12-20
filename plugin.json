@@ -26,7 +26,7 @@
         "key": "allow_insecure_issuer",
         "display_name": "Allow Insecure Issuer",
         "type": "bool",
-        "help_text": "Temporarily permit http:// issuers for local testing with self-signed certificates.",
+        "help_text": "Temporarily permit http:// issuers for local testing (not for self-signed certificates).",
         "default": false
       },
       {

@@ -13,3 +13,6 @@ const plugin = new OIDCPlugin();
 if (typeof window !== 'undefined' && window.registerPlugin) {
   window.registerPlugin(pluginId, plugin);
 }
+
+// Export for testing
+export default OIDCPlugin;
