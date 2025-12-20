@@ -9,12 +9,12 @@ const LoginPanel = () => {
   const ready = status === 'ready';
   const issuer = data?.issuer_url ?? '—';
   const redirect = data?.redirect_url ?? '—';
-  const title = 'Launch the OIDC login flow';
-  const description = 'This plugin bundles an Authorization Code + PKCE flow. Kick off a login round-trip to verify Keycloak and Mattermost are wired correctly.';
+  const title = 'Sign in with your OIDC provider';
+  const description = 'Kick off the hardened Authorization Code + PKCE round-trip to confirm Mattermost and Keycloak are wired correctly.';
 
   const statusLabel = useMemo(() => {
     if (status === 'loading') {
-      return 'Checking status…';
+      return 'Checking plugin health…';
     }
     if (status === 'error') {
       return 'Health check failed';
@@ -29,7 +29,7 @@ const LoginPanel = () => {
     window.location.assign(loginURL);
   };
 
-  const primaryLabel = ready ? (busy ? 'Preparing…' : 'Start Login') : 'Plugin not ready';
+  const primaryLabel = ready ? (busy ? 'Preparing…' : 'Start OIDC Login') : 'Plugin not ready';
 
   return (
     <section className={styles.shell}>
@@ -44,13 +44,13 @@ const LoginPanel = () => {
           {primaryLabel}
         </button>
         <button className={styles.secondary} onClick={refresh} disabled={busy}>
-          Refresh Status
+          Retry Health Check
         </button>
       </div>
 
       {!ready && (
         <p className={styles.notice}>
-          Health checks must pass before the login flow is available. Review the plugin configuration or refresh to retry.
+          Complete plugin configuration and wait for the health check to pass before launching the login flow, then retry.
         </p>
       )}
 

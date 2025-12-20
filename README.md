@@ -1,53 +1,40 @@
 # Mattermost OIDC Plugin
 
-Mattermost plugin that enables single sign-on with arbitrary OpenID Connect providers (Keycloak by default). The project tracks the latest Mattermost Server (v9.x+) and Keycloak (v25.x+) releases and follows strict security and coding best practices.
+This plugin gives Mattermost a production-grade OIDC bridge (Authorization Code + PKCE) with Keycloak-first defaults, hardened state/nonce handling, encrypted refresh tokens, and observability hooks. It targets Mattermost Server v9.x+ and Keycloak v25.x+ while remaining compatible with any standards-compliant provider.
 
 ## Installation & Configuration
 
-The plugin is distributed as a standard Mattermost archive. Download it from [GitHub Releases](https://github.com/insoln/mm-oidc/releases) or build it with `make package` (see Packaging below). Local builds output `build/plugins/mm-oidc.tar.gz`.
+Install the packaged archive in Mattermost, then point it at a confidential client inside your IdP. You can download releases from [GitHub Releases](https://github.com/insoln/mm-oidc/releases) or run `make package`, which produces `build/plugins/mm-oidc.tar.gz`.
 
 ### 1. Install the plugin in Mattermost
 
 1. Sign in to Mattermost as a system administrator.
-2. Navigate to **System Console → Plugin Management → Plugin Upload** and enable plugin uploads if prompted.
-3. Upload `mm-oidc.tar.gz` (from `build/plugins/` or the GitHub release) and click **Enable** for `com.mm.oidc`.
-4. Open `https://<mattermost-host>/plugins/com.mm.oidc/` to verify the landing page renders and shows your configured issuer/redirect metadata.
+2. Navigate to **System Console → Plugin Management → Plugin Upload** and enable uploads if prompted.
+3. Upload `mm-oidc.tar.gz` (either from `build/plugins/` or a release asset) and click **Enable** for `com.mm.oidc`.
+4. Visit `https://<mattermost-host>/plugins/com.mm.oidc/` to confirm the landing page renders; it should list the issuer and redirect metadata once configured.
 
 ### 2. Configure Keycloak (step-by-step)
 
-These instructions assume Keycloak 25.x with the new admin console.
+These steps target Keycloak 25.x and its current admin console.
 
-1. **Sign in** to the Keycloak Admin Console (`https://<keycloak-host>/admin`) using the bootstrap admin credentials.
-2. **Create or select a realm**:
-   - Click the realm selector (top-left) → **Create realm**.
-   - Enter a realm name such as `mattermost` and click **Create**. Skip this if you already use a dedicated realm.
+1. **Sign in** to `https://<keycloak-host>/admin` with your bootstrap admin.
+2. **Create or select a realm** dedicated to Mattermost (realm selector → **Create realm** → name such as `mattermost`).
 3. **Create the Mattermost client**:
-   - In the left sidebar choose **Clients** → **Create client**.
-   - Set **Client type** to *OpenID Connect*, **Client ID** to something memorable (e.g., `mattermost`), and click **Next**.
-   - On the *Capability config* step:
-     - Enable **Client authentication**.
-     - Enable **Standard flow** (Authorization Code) and disable **Implicit flow**, **Direct access grants**, and **Service accounts**.
-     - Click **Next**.
-   - On *Login settings*:
-     - **Valid redirect URIs**: `https://<mattermost-host>/plugins/com.mm.oidc/callback`.
-     - **Web origins**: `https://<mattermost-host>` (add additional origins if you expose Mattermost on multiple hostnames).
-     - Leave front-channel logout blank unless you plan to wire it later, then click **Save**.
-4. **Capture the client secret**:
-   - After saving, open the new client → **Credentials** tab → copy the **Client secret**. You will paste this into Mattermost configuration.
+  - **Clients → Create client** → choose *OpenID Connect* and set a memorable **Client ID**.
+  - On **Capability config**, enable **Client authentication** and **Standard flow**; disable **Implicit flow**, **Direct access grants**, and **Service accounts**.
+  - On **Login settings**, set **Valid redirect URIs** to `https://<mattermost-host>/plugins/com.mm.oidc/callback` and **Web origins** to `https://<mattermost-host>` (add alternates as needed). Leave front-channel logout empty unless you plan to wire it later. Click **Save**.
+4. **Capture the client secret** from the **Credentials** tab. You will paste this into Mattermost.
 5. **Add protocol mappers** (Clients → your client → **Client scopes** → **Add mapper → By configuration**):
-   - `preferred_username`: *User Property* mapper with property `username`, token claim name `preferred_username`, include in ID/UserInfo/Access tokens.
-   - `given_name`: property `firstName`, claim `given_name`.
-   - `family_name`: property `lastName`, claim `family_name`.
-   - `full_name`: *Full name* mapper.
-   - `email`: property `email`, claim `email`.
-   - *(Optional)* Client role mapper: type **Client roles**, select your client, set token claim name `resource_access.<client_id>.roles`, enable multi-valued output. This allows the plugin to read Keycloak roles for admin promotion.
-6. **Define an admin role (optional)**:
-   - Still inside the client, open **Roles** → **Add role**.
-   - Name it `system_admin` (or similar) and click **Save**.
-   - Assign the role to privileged users: **Users** → select user → **Role mapping** → **Assign role** → choose the client + role.
-7. **Verify email settings** (recommended): ensure user accounts have verified emails so Mattermost can auto-provision them. On the user profile page, set **Email verified** to *ON* if necessary.
+  - `preferred_username`: User Property `username`, claim `preferred_username`, include in ID/UserInfo/Access tokens.
+  - `given_name`: property `firstName`, claim `given_name`.
+  - `family_name`: property `lastName`, claim `family_name`.
+  - `full_name`: Full Name mapper.
+  - `email`: property `email`, claim `email`.
+  - *(Optional)* Client role mapper: type **Client roles**, claim `resource_access.<client_id>.roles`, multi-valued output (enables admin promotion).
+6. **Define an admin role (optional)**: Clients → your client → **Roles** → **Add role** (e.g., `system_admin`). Assign it via **Users → Role mapping** for anyone who should become a Mattermost System Admin.
+7. **Confirm email verification** so Mattermost can trust addresses (Users → profile → set **Email verified** to *ON* when needed).
 
-At this point Keycloak exposes the issuer `https://<keycloak-host>/realms/<realm>`, a confidential client with proper scopes, and a client secret ready for the Mattermost plugin.
+After this, Keycloak exposes the issuer `https://<keycloak-host>/realms/<realm>` plus a confidential client with mappers and a ready-to-use secret.
 
 #### Classic Admin Console (Keycloak ≤17)
 
@@ -74,16 +61,16 @@ Legacy and modern console settings are equivalent; only the navigation differs.
 
 ### 3. Configure the plugin settings
 
-In **System Console → Plugins → Mattermost OIDC**, fill in:
+Inside **System Console → Plugins → Mattermost OIDC** provide:
 
-- `Issuer URL`: `https://<keycloak-host>/realms/<realm>` (HTTPS strongly recommended in production).
-- `Allow insecure issuer`: leave disabled unless you are on localhost with self-signed certs.
-- `Client ID` / `Client Secret`: values from the Keycloak client you created.
+- `Issuer URL`: `https://<keycloak-host>/realms/<realm>` (always HTTPS outside disposable labs).
+- `Allow insecure issuer`: disable unless you are developing against `http://` endpoints.
+- `Client ID` and `Client Secret`: values from the Keycloak client.
 - `Redirect URL`: `https://<mattermost-host>/plugins/com.mm.oidc/callback`.
-- `Scopes`: typically `openid profile email`; include `roles` if you added the client-role mapper for admin promotion.
-- Optional enforcement knobs such as domain allowlists or role-to-admin mapping (see future configuration UI).
+- `Scopes`: usually `openid profile email`; append `roles` if you configured the client-role mapper.
+- Optional enforcement knobs (domain restrictions, role mapping) as they land in future UI updates.
 
-Click **Save**, then use the **Start Login** button on the plugin landing page to complete a test round-trip. Successful authentication should provision the user automatically (including system-admin promotion if the Keycloak role is present).
+Click **Save** and press **Start Login** on the plugin landing page to validate the round-trip. A successful run provisions the user and, if the Keycloak role is present, promotes them to Mattermost System Admin.
 
 > 💡 Tip: `scripts/dev-up.sh` + `scripts/dev-bootstrap.sh` perform every step above automatically for the Docker-based dev stack. Refer to `docs/DEV_ENV.md` if you prefer automation over manual configuration.
 
@@ -139,7 +126,7 @@ Additional files (created as implementation progresses):
 - **Make targets**:
   - `make server-test` / `make server-build` for Go tests and linux/amd64 builds.
   - `make webapp-build`, `make webapp-test`, `make webapp-lint` for the React bundle.
-  - `make package` emits `build/plugins/mm-oidc.tar.gz` (manifest + server binary + `webapp/dist/main.js`).
+  - `make package` emits `build/plugins/mm-oidc.tar.gz` (contents staged under `com.mm.oidc/` with the manifest, server binary, and entire `webapp/dist/`).
   - `make dev-up`, `make dev-down`, `make dev-logs` wrap the scripts above.
 
 ### Server internals
@@ -165,7 +152,11 @@ cd ../webapp
 corepack yarn install
 corepack yarn build
 cd ..
-tar -czvf build/plugins/mm-oidc.tar.gz plugin.json server/dist/plugin-linux-amd64 webapp/dist/main.js
+mkdir -p build/package/com.mm.oidc/server/dist build/package/com.mm.oidc/webapp/dist
+cp plugin.json build/package/com.mm.oidc/
+cp server/dist/plugin-linux-amd64 build/package/com.mm.oidc/server/dist/
+cp -R webapp/dist/. build/package/com.mm.oidc/webapp/dist/
+tar -czvf build/plugins/mm-oidc.tar.gz -C build/package com.mm.oidc
 ```
 
 ### Webapp bundle

@@ -4,6 +4,11 @@ SERVER_DIR := server
 WEBAPP_DIR := webapp
 BUILD_DIR := build
 PLUGIN_ARCHIVE := $(BUILD_DIR)/plugins/mm-oidc.tar.gz
+PLUGIN_ID := com.mm.oidc
+PACKAGE_ROOT := $(BUILD_DIR)/package
+PLUGIN_STAGING := $(PACKAGE_ROOT)/$(PLUGIN_ID)
+SERVER_DIST_DIR := $(SERVER_DIR)/dist
+WEBAPP_DIST_DIR := $(WEBAPP_DIR)/dist
 SERVER_BINARY := plugin-linux-amd64
 YARN := corepack yarn
 
@@ -28,8 +33,13 @@ webapp-lint: webapp-install
 	cd $(WEBAPP_DIR) && $(YARN) lint
 
 package: server-build webapp-build
+	rm -rf $(PLUGIN_STAGING)
+	mkdir -p $(PLUGIN_STAGING)/server/dist $(PLUGIN_STAGING)/webapp/dist
+	cp plugin.json $(PLUGIN_STAGING)/
+	cp $(SERVER_DIST_DIR)/$(SERVER_BINARY) $(PLUGIN_STAGING)/server/dist/
+	cp -R $(WEBAPP_DIST_DIR)/. $(PLUGIN_STAGING)/webapp/dist/
 	mkdir -p $(BUILD_DIR)/plugins
-	tar -czvf $(PLUGIN_ARCHIVE) plugin.json $(SERVER_DIR)/dist/$(SERVER_BINARY) $(WEBAPP_DIR)/dist/main.js
+	tar -czvf $(PLUGIN_ARCHIVE) -C $(PACKAGE_ROOT) $(PLUGIN_ID)
 
 clean-plugin:
 	rm -f $(PLUGIN_ARCHIVE)
