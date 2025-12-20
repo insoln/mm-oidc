@@ -1,0 +1,12 @@
+# Dependencies
+node_modules/
+.yarn/
+.pnp.*
+
+# Playwright
+playwright-report/
+test-results/
+.playwright/
+
+# Lock files
+# e2e has its own yarn.lock for Playwright/E2E dependencies

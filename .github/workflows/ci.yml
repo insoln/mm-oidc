@@ -103,3 +103,69 @@ jobs:
       - name: Tear down dev stack
         if: always()
         run: ./scripts/dev-down.sh
+
+  e2e-tests:
+    name: Playwright E2E Tests
+    runs-on: ubuntu-latest
+    needs:
+      - server-tests
+      - webapp-tests
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Enable Corepack
+        run: corepack enable
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'yarn'
+          cache-dependency-path: |
+            webapp/yarn.lock
+            e2e/yarn.lock
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+          cache: true
+
+      - name: Install E2E dependencies
+        working-directory: e2e
+        run: |
+          corepack yarn install --inline-builds
+          corepack yarn playwright install --with-deps chromium
+
+      - name: Bootstrap dev stack
+        run: ./scripts/dev-up.sh
+        env:
+          CI: true
+
+      - name: Run Playwright tests
+        working-directory: e2e
+        run: corepack yarn test
+        env:
+          CI: true
+          SKIP_DEV_STACK: true
+
+      - name: Upload Playwright report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: playwright-report
+          path: e2e/playwright-report/
+          retention-days: 30
+
+      - name: Upload test results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: playwright-results
+          path: e2e/test-results/
+          retention-days: 7
+
+      - name: Tear down dev stack
+        if: always()
+        run: ./scripts/dev-down.sh

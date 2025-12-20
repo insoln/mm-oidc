@@ -98,6 +98,7 @@ Mattermost plugins cannot override the core `/login` or `/logout` pages; only th
 ├── build/                 # Versioned plugin bundles and release notes
 ├── deploy/                # IaC assets (Helm charts, Kubernetes manifests)
 ├── docs/                  # Architecture, runbooks, threat models
+├── e2e/                   # Playwright E2E tests
 ├── scripts/               # Developer automation (lint, package, e2e)
 ├── server/                # Go backend plugin (Mattermost RPC entrypoints)
 ├── webapp/                # React/TypeScript webapp bundle
@@ -116,7 +117,7 @@ Additional files (created as implementation progresses):
 - **Branching**: trunk-based development. Every feature branch ships with tests + documentation updates before merging to `main`.
 - **Quality gates**: `golangci-lint` for Go, `eslint`/`stylelint`/`tsc --noEmit` for the webapp, `hadolint` for container artifacts.
 - **Security**: Dependabot/Snyk (or equivalent) stay enabled, secrets live only in environment variables or the encrypted Mattermost plugin KV store.
-- **Testing**: prioritize unit tests, add contract/integration tests for the OIDC flow, and keep Cypress suites for full-stack validation.
+- **Testing**: prioritize unit tests (`make server-test`, `make webapp-test`), add E2E tests with Playwright (`make e2e-test`) for full OIDC flow validation.
 - **Releases**: tag every release, publish signed `.tar.gz` bundles in `build/`, and aggregate changelog fragments per PR.
 
 ### Tooling & local environment
@@ -126,6 +127,7 @@ Additional files (created as implementation progresses):
 - **Make targets**:
   - `make server-test` / `make server-build` for Go tests and linux/amd64 builds.
   - `make webapp-build`, `make webapp-test`, `make webapp-lint` for the React bundle.
+  - `make e2e-install`, `make e2e-test` for Playwright E2E tests against the dev stack.
   - `make package` emits `build/plugins/mm-oidc.tar.gz` (contents staged under `com.mm.oidc/` with the manifest, server binary, and entire `webapp/dist/`).
   - `make dev-up`, `make dev-down`, `make dev-logs` wrap the scripts above.
 
@@ -183,13 +185,45 @@ corepack yarn test           # Vitest (jsdom)
   - `Go Server Tests` → Go 1.22 toolchain + `make server-test`.
   - `Webapp Tests` → Node 20 + Corepack, caches Yarn installs, runs `yarn test`.
   - `Dev Stack Bootstrap` → spins up the docker-compose stack via `scripts/dev-up.sh`, validates container health, and always runs `scripts/dev-down.sh` for cleanup.
+  - `Playwright E2E Tests` → installs Playwright, starts dev stack, runs full OIDC flow tests, uploads HTML reports and test artifacts.
 
 All jobs must pass before merging. Extend the workflow with linting, integration, or packaging gates as the project grows.
+
+## Testing
+
+### Unit Tests
+
+- **Go server tests**: `make server-test` or `cd server && go test ./...`
+- **React webapp tests**: `make webapp-test` or `cd webapp && yarn test`
+
+### E2E Tests
+
+End-to-end tests use Playwright to validate the complete OIDC authentication flow in a real browser against the dev stack (Mattermost + Keycloak).
+
+```bash
+# Install Playwright dependencies
+make e2e-install
+
+# Run E2E tests (automatically starts dev stack)
+make e2e-test
+
+# Or use the script directly
+./scripts/e2e-test.sh
+
+# Run with custom options
+cd e2e
+yarn test:headed    # visible browser
+yarn test:debug     # step-through debugger
+yarn test:report    # view HTML report
+```
+
+See `docs/E2E_TESTING.md` for comprehensive testing guide, troubleshooting, and CI integration details.
 
 ## Documentation
 
 - Architecture deep dive: `docs/ARCHITECTURE.md`
 - Dev/test environment guide: `docs/DEV_ENV.md`
+- E2E testing with Playwright: `docs/E2E_TESTING.md`
 - Runbooks (planned): `docs/runbooks/`
 - Threat model & security reviews (planned): `docs/threat-model/`
 
