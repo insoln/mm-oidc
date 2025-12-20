@@ -11,7 +11,11 @@ import { test, expect } from '@playwright/test';
  * 5. Plugin exchanges code for tokens and provisions user
  */
 
-// Default credentials from dev.env
+// Dev-only defaults for the local docker/dev stack.
+// NOTE:
+// - Real environments MUST provide credentials and URLs via environment variables.
+// - These fallback values and the associated dev.env file are for local development ONLY.
+// - dev.env must never contain production credentials or be used in any production environment.
 const KEYCLOAK_ADMIN_USER = process.env.KC_ADMIN || 'admin';
 const KEYCLOAK_ADMIN_PASSWORD = process.env.KC_ADMIN_PASSWORD || 'Keycloak123!';
 const MM_SITE_URL = process.env.MM_SITE_URL || 'http://localhost:8065';
@@ -52,8 +56,8 @@ test.describe('OIDC Authentication Flow', () => {
     expect(authCookie).toBeDefined();
     
     // Step 8: Verify user is logged in by checking the page content
-    // Mattermost typically shows channels or redirects to app after login
-    await page.waitForTimeout(2000); // Give Mattermost time to process
+    // Wait for Mattermost to complete loading after authentication
+    await page.waitForLoadState('networkidle');
     const currentUrl = page.url();
     
     // Should not be on login page or error page
@@ -79,11 +83,14 @@ test.describe('OIDC Authentication Flow', () => {
     
     // Should see error message on Keycloak page
     await expect(page.locator('text=/invalid.*credentials|Invalid username or password/i')).toBeVisible({ timeout: 10000 });
+    
+    // Verify we're still on Keycloak and not redirected to Mattermost
+    expect(page.url()).toMatch(/keycloak/i);
   });
 
   test('should preserve state parameter during auth flow', async ({ page }) => {
-    // Navigate to login endpoint and capture the redirect
-    const response = await page.goto('/plugins/com.mm.oidc/login');
+    // Navigate to login endpoint
+    await page.goto('/plugins/com.mm.oidc/login');
     
     // Should redirect to Keycloak with state parameter
     await page.waitForURL(/keycloak.*\/realms\/.*\/protocol\/openid-connect\/auth/i, { timeout: 15000 });

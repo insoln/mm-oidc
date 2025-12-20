@@ -22,7 +22,7 @@ e2e/
 ## Test Suites
 
 ### Health Tests (`health.spec.ts`)
-- **Plugin Health Check**: Validates `/plugins/com.mm.oidc/health` endpoint returns healthy status
+- **Plugin Health Check**: Validates `/plugins/com.mm.oidc/health` endpoint returns ready status
 - **Landing Page**: Verifies the plugin landing page loads and displays expected content
 
 ### OIDC Flow Tests (`oidc-flow.spec.ts`)

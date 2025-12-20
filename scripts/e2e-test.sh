@@ -42,8 +42,8 @@ fi
 # Run tests
 echo -e "${GREEN}[e2e-test] Running Playwright tests...${NC}"
 if [[ "${CI:-false}" == "true" ]]; then
-  # In CI, run with retries and proper reporting
-  corepack yarn test --reporter=html,github
+  # In CI, rely on Playwright config for retries and reporting
+  corepack yarn test
 else
   # Locally, pass any additional arguments
   corepack yarn test "$@"

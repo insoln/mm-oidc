@@ -1,7 +1,7 @@
 import { test, expect } from '@playwright/test';
 
 test.describe('Plugin Health Check', () => {
-  test('should return healthy status from health endpoint', async ({ page }) => {
+  test('should return ready status from health endpoint', async ({ page }) => {
     // Navigate to the plugin health endpoint
     const response = await page.goto('/plugins/com.mm.oidc/health');
     
@@ -11,7 +11,7 @@ test.describe('Plugin Health Check', () => {
     // Check response body
     const healthData = await response?.json();
     expect(healthData).toBeDefined();
-    expect(healthData.status).toBe('healthy');
+    expect(healthData.status).toBe('ready');
   });
 
   test('should display plugin landing page', async ({ page }) => {

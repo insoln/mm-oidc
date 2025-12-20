@@ -28,7 +28,7 @@ export default defineConfig({
 
   // Run dev stack before tests if not already running
   webServer: process.env.SKIP_DEV_STACK ? undefined : {
-    command: 'bash -c "cd .. && ./scripts/dev-up.sh"',
+    command: `bash -c "cd ${__dirname}/.. && ./scripts/dev-up.sh"`,
     url: 'http://localhost:8065',
     timeout: 180 * 1000, // 3 minutes for stack to come up
     reuseExistingServer: !process.env.CI,

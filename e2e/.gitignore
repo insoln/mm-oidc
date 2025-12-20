@@ -8,5 +8,5 @@ playwright-report/
 test-results/
 .playwright/
 
-# Lock files (Yarn 4 uses yarn.lock in parent)
-# Keep yarn.lock if it exists in e2e/
+# Lock files
+# e2e has its own yarn.lock for Playwright/E2E dependencies
