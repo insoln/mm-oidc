@@ -148,6 +148,7 @@ jobs:
         run: corepack yarn test
         env:
           CI: true
+          SKIP_DEV_STACK: true
 
       - name: Upload Playwright report
         uses: actions/upload-artifact@v4
