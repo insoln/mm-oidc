@@ -1,0 +1,12 @@
+# Dependencies
+node_modules/
+.yarn/
+.pnp.*
+
+# Playwright
+playwright-report/
+test-results/
+.playwright/
+
+# Lock files (Yarn 4 uses yarn.lock in parent)
+# Keep yarn.lock if it exists in e2e/
