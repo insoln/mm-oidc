@@ -1,0 +1,289 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OIDC Login Button Preview</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+            background: #f5f5f5;
+            padding: 40px 20px;
+        }
+
+        .preview-container {
+            max-width: 800px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+            padding: 40px;
+        }
+
+        .title {
+            font-size: 24px;
+            font-weight: 600;
+            margin-bottom: 8px;
+            color: #333;
+        }
+
+        .subtitle {
+            font-size: 14px;
+            color: #666;
+            margin-bottom: 32px;
+        }
+
+        .login-form-mockup {
+            max-width: 400px;
+            margin: 0 auto;
+            padding: 32px;
+            background: #fafafa;
+            border-radius: 8px;
+            border: 1px solid #e0e0e0;
+        }
+
+        .form-title {
+            font-size: 20px;
+            font-weight: 600;
+            text-align: center;
+            margin-bottom: 24px;
+            color: #333;
+        }
+
+        .form-group {
+            margin-bottom: 16px;
+        }
+
+        .form-label {
+            display: block;
+            font-size: 14px;
+            font-weight: 500;
+            margin-bottom: 8px;
+            color: #333;
+        }
+
+        .form-input {
+            width: 100%;
+            padding: 10px 12px;
+            font-size: 14px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            background: white;
+        }
+
+        .form-checkbox {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 14px;
+            color: #666;
+            margin-bottom: 16px;
+        }
+
+        .form-submit {
+            width: 100%;
+            padding: 12px;
+            font-size: 16px;
+            font-weight: 600;
+            color: white;
+            background: #0058cc;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            margin-bottom: 12px;
+        }
+
+        .form-submit:hover {
+            background: #004bb3;
+        }
+
+        .forgot-password {
+            text-align: center;
+            font-size: 14px;
+            color: #0058cc;
+            cursor: pointer;
+            margin-bottom: 24px;
+        }
+
+        /* OIDC Button Styles - The actual implementation */
+        .oidc-container {
+            width: 100%;
+            max-width: 400px;
+            margin: 24px auto 0;
+            padding: 0 16px;
+        }
+
+        .oidc-divider {
+            display: flex;
+            align-items: center;
+            text-align: center;
+            margin: 24px 0 16px;
+        }
+
+        .oidc-divider::before,
+        .oidc-divider::after {
+            content: '';
+            flex: 1;
+            border-bottom: 1px solid rgba(0, 0, 0, 0.16);
+        }
+
+        .oidc-divider-text {
+            padding: 0 16px;
+            font-size: 13px;
+            font-weight: 600;
+            color: rgba(0, 0, 0, 0.56);
+            text-transform: uppercase;
+            letter-spacing: 0.02em;
+        }
+
+        .oidc-button {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 100%;
+            padding: 12px 20px;
+            font-size: 16px;
+            font-weight: 600;
+            line-height: 1.5;
+            color: white;
+            background: #0058cc;
+            border: 1px solid rgba(0, 0, 0, 0.16);
+            border-radius: 4px;
+            cursor: pointer;
+            transition: all 0.15s ease;
+            gap: 12px;
+        }
+
+        .oidc-button:hover {
+            background: rgba(0, 88, 204, 0.92);
+            border-color: rgba(0, 0, 0, 0.24);
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+            transform: translateY(-1px);
+        }
+
+        .oidc-button:active {
+            transform: translateY(0);
+            box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08);
+        }
+
+        .oidc-icon {
+            flex-shrink: 0;
+            width: 20px;
+            height: 20px;
+        }
+
+        .oidc-button-text {
+            flex: 1;
+            text-align: center;
+        }
+
+        .oidc-hint {
+            margin-top: 8px;
+            font-size: 13px;
+            line-height: 1.5;
+            color: rgba(0, 0, 0, 0.64);
+            text-align: center;
+        }
+
+        .note {
+            margin-top: 32px;
+            padding: 16px;
+            background: #e3f2fd;
+            border-left: 4px solid #0058cc;
+            border-radius: 4px;
+            font-size: 14px;
+            color: #333;
+        }
+
+        .note-title {
+            font-weight: 600;
+            margin-bottom: 8px;
+        }
+
+        .highlight {
+            background: #fff3cd;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-weight: 500;
+        }
+    </style>
+</head>
+<body>
+    <div class="preview-container">
+        <h1 class="title">OIDC Login Button - Visual Preview</h1>
+        <p class="subtitle">This is how the "Sign in with OIDC" button appears on the Mattermost login page</p>
+
+        <!-- Mattermost Login Form Mockup -->
+        <div class="login-form-mockup">
+            <h2 class="form-title">Mattermost Login</h2>
+            
+            <div class="form-group">
+                <label class="form-label">Email or Username</label>
+                <input type="text" class="form-input" placeholder="you@example.com" disabled>
+            </div>
+
+            <div class="form-group">
+                <label class="form-label">Password</label>
+                <input type="password" class="form-input" placeholder="********" disabled>
+            </div>
+
+            <div class="form-checkbox">
+                <input type="checkbox" disabled>
+                <span>Remember me</span>
+            </div>
+
+            <button class="form-submit" disabled>Sign in</button>
+
+            <div class="forgot-password">Forgot password?</div>
+
+            <!-- OIDC Button Component - The actual implementation -->
+            <div class="oidc-container" style="padding: 0;">
+                <div class="oidc-divider">
+                    <span class="oidc-divider-text">OR</span>
+                </div>
+
+                <button class="oidc-button" id="oidc-btn">
+                    <svg class="oidc-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 3c1.66 0 3 1.34 3 3s-1.34 3-3 3-3-1.34-3-3 1.34-3 3-3zm0 14.2c-2.5 0-4.71-1.28-6-3.22.03-1.99 4-3.08 6-3.08 1.99 0 5.97 1.09 6 3.08-1.29 1.94-3.5 3.22-6 3.22z" fill="currentColor"/>
+                    </svg>
+                    <span class="oidc-button-text">Sign in with OIDC</span>
+                </button>
+
+                <p class="oidc-hint">
+                    Authenticate using your organization's identity provider
+                </p>
+            </div>
+        </div>
+
+        <div class="note">
+            <div class="note-title">📋 Implementation Details</div>
+            <p>
+                The <span class="highlight">Sign in with OIDC</span> button appears automatically when:
+            </p>
+            <ul style="margin-left: 20px; margin-top: 8px; line-height: 1.6;">
+                <li>Plugin is enabled in System Console</li>
+                <li>"Show Login Button" setting is enabled (default: true)</li>
+                <li>User is on the <code>/login</code> page</li>
+                <li>Plugin configuration is valid (Issuer URL configured)</li>
+            </ul>
+            <p style="margin-top: 12px;">
+                When clicked, the button redirects to <code>/plugins/com.mm.oidc/login</code> which starts the OIDC authentication flow.
+            </p>
+        </div>
+    </div>
+
+    <script>
+        // Add hover effect
+        document.getElementById('oidc-btn').addEventListener('click', function(e) {
+            e.preventDefault();
+            alert('In actual implementation, this button redirects to:\n/plugins/com.mm.oidc/login\n\nWhich then redirects to your OIDC provider (e.g., Keycloak)');
+        });
+    </script>
+</body>
+</html>
