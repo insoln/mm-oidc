@@ -1,0 +1,113 @@
+.container {
+  width: 100%;
+  max-width: 400px;
+  margin: 24px auto 0;
+  padding: 0 16px;
+}
+
+.divider {
+  display: flex;
+  align-items: center;
+  text-align: center;
+  margin: 24px 0 16px;
+}
+
+.divider::before,
+.divider::after {
+  content: '';
+  flex: 1;
+  border-bottom: 1px solid rgba(var(--center-channel-color-rgb), 0.16);
+}
+
+.dividerText {
+  padding: 0 16px;
+  font-size: 13px;
+  font-weight: 600;
+  color: rgba(var(--center-channel-color-rgb), 0.56);
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+
+.oidcButton {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  padding: 12px 20px;
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 1.5;
+  color: var(--button-color);
+  background: var(--button-bg);
+  border: 1px solid rgba(var(--center-channel-color-rgb), 0.16);
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  gap: 12px;
+}
+
+.oidcButton:hover {
+  background: rgba(var(--button-bg-rgb), 0.92);
+  border-color: rgba(var(--center-channel-color-rgb), 0.24);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+  transform: translateY(-1px);
+}
+
+.oidcButton:active {
+  transform: translateY(0);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08);
+}
+
+.oidcButton:focus {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--button-bg);
+}
+
+.icon {
+  flex-shrink: 0;
+  width: 20px;
+  height: 20px;
+}
+
+.buttonText {
+  flex: 1;
+  text-align: center;
+}
+
+.hint {
+  margin-top: 8px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: rgba(var(--center-channel-color-rgb), 0.64);
+  text-align: center;
+}
+
+/* Dark mode support */
+@media (prefers-color-scheme: dark) {
+  .oidcButton {
+    background: rgba(255, 255, 255, 0.08);
+    color: rgba(255, 255, 255, 0.92);
+    border-color: rgba(255, 255, 255, 0.16);
+  }
+
+  .oidcButton:hover {
+    background: rgba(255, 255, 255, 0.12);
+    border-color: rgba(255, 255, 255, 0.24);
+  }
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+  .container {
+    padding: 0 12px;
+  }
+
+  .oidcButton {
+    padding: 10px 16px;
+    font-size: 15px;
+  }
+
+  .hint {
+    font-size: 12px;
+  }
+}

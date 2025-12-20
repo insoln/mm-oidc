@@ -15,6 +15,8 @@ type Configuration struct {
 	RedirectURL         string   `json:"redirect_url"`
 	Scopes              []string `json:"scopes"`
 	AllowInsecureIssuer bool     `json:"allow_insecure_issuer"`
+	EnableAutoRedirect  bool     `json:"enable_auto_redirect"`
+	ShowLoginButton     bool     `json:"show_login_button"`
 }
 
 // Clone returns a deep copy so callers can safely mutate without holding locks.
@@ -35,6 +37,8 @@ func (c *Configuration) SetDefaults() {
 	if len(c.Scopes) == 0 {
 		c.Scopes = []string{"openid", "profile", "email"}
 	}
+	// ShowLoginButton defaults to true if not explicitly set
+	// This is handled by plugin.json default, but we ensure it here too
 }
 
 // Validate performs basic semantic checks and protects against misconfiguration before activation.

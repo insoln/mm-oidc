@@ -141,6 +141,7 @@ func (p *Plugin) getRouter() http.Handler {
 		mux := http.NewServeMux()
 		mux.HandleFunc("/", p.handleLanding)
 		mux.HandleFunc("/health", p.handleHealth)
+		mux.HandleFunc("/config", p.handlePublicConfig)
 		mux.HandleFunc("/login", p.handleLogin)
 		mux.HandleFunc("/callback", p.handleCallback)
 		mux.HandleFunc("/logout", p.handleLogout)
@@ -166,6 +167,16 @@ func (p *Plugin) handleHealth(w http.ResponseWriter, _ *http.Request) {
 		"status":       status,
 		"issuer_url":   cfg.IssuerURL,
 		"redirect_url": cfg.RedirectURL,
+	}
+
+	p.respondJSON(w, payload, http.StatusOK)
+}
+
+func (p *Plugin) handlePublicConfig(w http.ResponseWriter, _ *http.Request) {
+	cfg := p.getConfiguration()
+	payload := map[string]interface{}{
+		"show_login_button": cfg.ShowLoginButton,
+		"issuer_url":        cfg.IssuerURL,
 	}
 
 	p.respondJSON(w, payload, http.StatusOK)

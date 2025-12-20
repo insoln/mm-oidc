@@ -61,6 +61,20 @@
         "help_text": "Space- or comma-separated scopes requested during authorization (include roles if you map admin roles).",
         "placeholder": "openid profile email",
         "default": "openid profile email"
+      },
+      {
+        "key": "enable_auto_redirect",
+        "display_name": "Enable Auto-Redirect (Infrastructure Level)",
+        "type": "bool",
+        "help_text": "INFORMATIONAL ONLY: Mattermost plugins cannot intercept /login directly. To enable automatic redirect from /login to OIDC, configure your reverse proxy/ingress. See docs/LOGIN_INTEGRATION_RESEARCH.md for examples. This setting documents your infrastructure choice and may be used for future auto-configuration features.",
+        "default": false
+      },
+      {
+        "key": "show_login_button",
+        "display_name": "Show Login Button",
+        "type": "bool",
+        "help_text": "Display 'Sign in with OIDC' button on the Mattermost login page. Recommended when auto-redirect is not configured at the infrastructure level.",
+        "default": true
       }
     ]
   }
