@@ -231,3 +231,73 @@ func cookieByName(cookies []*http.Cookie, name string) *http.Cookie {
 	}
 	return nil
 }
+
+func TestExtractHost(t *testing.T) {
+	tests := []struct {
+		name     string
+		urlStr   string
+		expected string
+	}{
+		{
+			name:     "full URL",
+			urlStr:   "https://mattermost.example.com:8065/path",
+			expected: "mattermost.example.com:8065",
+		},
+		{
+			name:     "URL with default port",
+			urlStr:   "https://mattermost.example.com",
+			expected: "mattermost.example.com",
+		},
+		{
+			name:     "localhost",
+			urlStr:   "http://localhost:8065",
+			expected: "localhost:8065",
+		},
+		{
+			name:     "invalid URL",
+			urlStr:   "not a valid url",
+			expected: "localhost",
+		},
+		{
+			name:     "empty URL",
+			urlStr:   "",
+			expected: "localhost",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := extractHost(tt.urlStr)
+			if got != tt.expected {
+				t.Errorf("extractHost(%q) = %q, want %q", tt.urlStr, got, tt.expected)
+			}
+		})
+	}
+}
+
+func TestAuthSessionMobile(t *testing.T) {
+	t.Run("stores mobile flag", func(t *testing.T) {
+		session := &authSession{
+			Nonce:        "test-nonce",
+			CodeVerifier: "test-verifier",
+			CreatedAt:    time.Now().Unix(),
+			IsMobile:     true,
+		}
+
+		if !session.IsMobile {
+			t.Fatal("expected IsMobile to be true")
+		}
+	})
+
+	t.Run("defaults to web client", func(t *testing.T) {
+		session := &authSession{
+			Nonce:        "test-nonce",
+			CodeVerifier: "test-verifier",
+			CreatedAt:    time.Now().Unix(),
+		}
+
+		if session.IsMobile {
+			t.Fatal("expected IsMobile to be false by default")
+		}
+	})
+}

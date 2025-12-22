@@ -5,16 +5,18 @@ Securely connect Mattermost Server v9.x+ to modern OpenID Connect providers (Key
 ## What you get
 
 - ✅ Full OIDC login flow with automatic user provisioning and optional admin promotion via client roles.
+- ✅ Desktop/Mobile app support with browser-based authentication and protocol handler redirect.
 - ✅ Ready-made Docker stack (Mattermost + Keycloak + Postgres + proxy) for demos, QA, and CI.
 - ✅ Proxy recipe that rewrites `/login` to the plugin route without breaking API clients.
 - ✅ Playwright regression suite that mirrors the documented installation steps.
 
 ## Choose your deployment path
 
-Use the [User Guide](docs/USER_GUIDE.md) for step-by-step instructions covering two supported scenarios:
+Use the [User Guide](docs/USER_GUIDE.md) for step-by-step instructions covering three supported scenarios:
 
 1. **Existing Mattermost instances** – upload `mm-oidc.tar.gz`, configure the IdP client, and validate the flow from the System Console.
 2. **Proxy-assisted login** – drop the maintained Nginx container (or Helm/K8s manifests) in front of Mattermost so `/login` automatically redirects into the plugin without touching server code.
+3. **Desktop/Mobile applications** – enable browser-based OAuth authentication for Mattermost desktop and mobile apps with automatic protocol handler redirect.
 
 Need the standalone Docker stack or automation workflows? Jump to [docs/DEVELOPER_GUIDE.md](docs/DEVELOPER_GUIDE.md).
 

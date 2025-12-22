@@ -139,3 +139,71 @@ spec:
 - If you run multiple Mattermost instances behind the proxy, configure sticky sessions or an external session store so `MMAUTHTOKEN` cookies stay valid across hosts.
 
 ---
+
+## 3. Using the plugin with Mattermost Desktop App
+
+The plugin supports authentication via the Mattermost Desktop application on Windows, macOS, and Linux. The desktop app opens the OAuth flow in your system's default browser, then redirects back to the app after successful authentication.
+
+### Prerequisites
+
+- Mattermost Desktop app v5.0+ installed and configured
+- Plugin installed and configured as described in section 1
+- System browser (Chrome, Firefox, Safari, Edge) available
+
+### How it works
+
+1. **Desktop app initiates login**: When you click "Sign in with SSO" or similar in the desktop app, it opens the plugin's login URL in your default browser with a special `isMobile=true` parameter.
+2. **Browser authentication**: You complete the OIDC authentication flow in your browser (which may use saved passwords, security keys, etc.).
+3. **Protocol handler redirect**: After successful authentication, the browser redirects to a `mattermost://` URL that the desktop app is registered to handle.
+4. **Session handoff**: The desktop app receives the authentication tokens and establishes your session.
+
+### Configuration
+
+No additional configuration is required on the plugin side. The desktop app automatically adds the `isMobile=true` parameter when initiating OAuth flows.
+
+### Usage
+
+1. **Launch the Mattermost Desktop app**
+2. **Add or select your server**: Enter your Mattermost server URL (e.g., `https://chat.example.com`)
+3. **Click to authenticate**: The app will detect that SSO is available and open your system browser
+4. **Complete authentication**: Log in through your Identity Provider in the browser
+5. **Return to app**: After successful authentication, you'll see a "Redirecting to Mattermost" page that automatically opens the desktop app
+   - If automatic redirect doesn't work, click the "Click here to open Mattermost" button
+
+### Troubleshooting
+
+**Problem**: Browser redirects to Mattermost but desktop app doesn't open
+
+**Solutions**:
+- Ensure the desktop app is installed and running
+- Check that the `mattermost://` protocol handler is registered (this happens automatically during installation)
+- On Windows: Check Windows Settings → Apps → Default Apps → Choose default apps by protocol
+- On macOS: The protocol handler should be registered automatically; try reinstalling the desktop app if it's not working
+- On Linux: Check your desktop environment's protocol handler configuration
+
+**Problem**: Desktop app opens but login doesn't complete
+
+**Solutions**:
+- Ensure you're running Desktop app v5.0 or newer
+- Check that the server URL in the desktop app matches your plugin's `Redirect URL` configuration
+- Review Mattermost server logs for any error messages
+- Try clearing the desktop app's cache (File → Settings → Clear Cache and Restart)
+
+**Problem**: "Missing authentication parameters" error
+
+**Solutions**:
+- This may indicate that the desktop app isn't properly passing the session tokens
+- Try logging in via the web browser first to verify the plugin is working correctly
+- Check that your Mattermost server's `SiteURL` is configured correctly in System Console
+
+### Security notes
+
+- **Browser-based authentication is more secure**: The desktop app opens OAuth in your system browser (not an embedded webview), which allows you to:
+  - Verify you're on the correct login page
+  - Use browser password managers
+  - Use hardware security keys (FIDO2/WebAuthn)
+  - Reuse existing authenticated sessions
+- **Protocol handler security**: The `mattermost://` protocol ensures that authentication tokens are only passed to the legitimate Mattermost desktop application installed on your system
+- **Short-lived tokens**: Authentication tokens passed via the protocol handler are short-lived and single-use
+
+---
