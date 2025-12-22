@@ -27,45 +27,26 @@ This guide documents the workflows that Mattermost OIDC plugin developers and co
 
 ## 2. Use the bundled Docker dev stack
 
-The repository ships with an opinionated Docker Compose environment (Mattermost, Keycloak, Postgres, proxy) that is ideal for demos, QA, and local development.
+The repository ships with a Docker Compose environment (Mattermost + Keycloak + Postgres + proxy) for local development and QA.
 
-### 2.1 Start the stack
+**Quick reference:**
 
 ```bash
+# Start the stack (builds plugin, provisions Keycloak, configures Mattermost)
 ./scripts/dev-up.sh
-```
 
-The script performs the following:
+# View logs
+./scripts/dev-logs.sh mattermost keycloak
 
-1. Copies `deploy/env/dev.env.example` to `deploy/env/dev.env` on first run and exports every variable.
-2. Runs `make package` to build `build/plugins/mm-oidc.tar.gz`.
-3. Launches [deploy/docker-compose.dev.yml](deploy/docker-compose.dev.yml) and waits for healthy containers.
-4. Executes [scripts/dev-bootstrap.sh](scripts/dev-bootstrap.sh) to:
-   - Provision the Keycloak realm/client, required mappers, and the `system_admin` client role.
-   - Create the Mattermost user `mm-admin` and grant the System Admin permission when the Keycloak role is present.
-   - Upload and enable the freshly built plugin, then sync all plugin settings.
+# Test the login flow
+# Open http://mattermost-proxy.127.0.0.1.nip.io:8787
+# Navigate to /plugins/com.mm.oidc/ and click "Start Login"
 
-### 2.2 Exercise the login flow
-
-1. Open `http://mattermost-proxy.127.0.0.1.nip.io:8787/` in a browser.
-2. Sign out if you already have an active Mattermost session.
-3. Navigate to `/plugins/com.mm.oidc/` or use the **Start Login** button in the plugin panel.
-4. Authenticate with the seeded Keycloak admin credentials (`admin / Keycloak123!`).
-5. After the redirect, confirm the Mattermost UI shows `mm-admin` and that the `MMAUTHTOKEN` cookie exists in your browser.
-
-### 2.3 Shut everything down
-
-```bash
+# Stop the stack
 ./scripts/dev-down.sh
 ```
 
-Volumes persist so you can resume later. Run `docker compose -f deploy/docker-compose.dev.yml down -v` for a full reset.
-
-### 2.4 Dev-stack limitations
-
-- HTTP endpoints on `127.0.0.1.nip.io` are for local use only—do not expose them to the internet.
-- SMTP/SMS MFA integrations are stubbed; only username/password auth is wired in Keycloak.
-- The proxy redirects `/login` only for browser GET requests; API clients still hit Mattermost directly on port `8065`.
+For complete setup details, prerequisites, environment customization, Keycloak bootstrap automation, and troubleshooting, see **[docs/DEV_ENV.md](DEV_ENV.md)**.
 
 ---
 

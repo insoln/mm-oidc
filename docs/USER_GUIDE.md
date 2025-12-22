@@ -25,7 +25,7 @@ Each section contains prerequisites, ordered steps, verification tips, and expli
   - Preferred: grab the latest signed archive from [GitHub Releases](https://github.com/insoln/mm-oidc/releases) (`mm-oidc.tar.gz`).
   - Need to build from source? Follow the packaging steps in [docs/DEVELOPER_GUIDE.md](DEVELOPER_GUIDE.md).
 2. **Provision (or reuse) a confidential client in your IdP**
-  - Follow the dedicated Keycloak instructions in [docs/KEYCLOAK_SETUP.md](docs/KEYCLOAK_SETUP.md) or replicate them for your IdP of choice.
+  - Follow the dedicated Keycloak instructions in [KEYCLOAK_SETUP.md](KEYCLOAK_SETUP.md) or replicate them for your IdP of choice.
    - Required mappers: `preferred_username`, `given_name`, `family_name`, `full_name`, `email`, and (optionally) a client-role mapper that emits `system_admin`.
 3. **Upload and enable the plugin**
    - Sign in to Mattermost as a system admin.
