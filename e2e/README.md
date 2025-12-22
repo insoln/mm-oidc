@@ -1,6 +1,6 @@
 # Playwright E2E Tests
 
-This directory contains end-to-end tests for the mm-oidc plugin using Playwright.
+End-to-end tests for the mm-oidc plugin using Playwright. Tests validate the complete OIDC authentication flow against a running Mattermost + Keycloak stack.
 
 ## Quick Start
 
@@ -13,41 +13,13 @@ make e2e-test     # Run tests
 ./scripts/e2e-test.sh
 ```
 
-## What's Tested
+## Full Documentation
 
-- Plugin health endpoint
-- Plugin landing page
-- Complete OIDC authentication flow (Authorization Code + PKCE)
-- Keycloak integration
-- Error handling
-
-## Documentation
-
-See **[docs/E2E_TESTING.md](../docs/E2E_TESTING.md)** for:
-- Detailed test documentation
-- Local development guide
-- CI integration details
-- Troubleshooting tips
-- Configuration options
-
-## Running Tests
-
-```bash
-# All tests
-yarn test
-
-# Headed mode (visible browser)
-yarn test:headed
-
-# Debug mode
-yarn test:debug
-
-# View report
-yarn test:report
-```
-
-## Configuration
-
-- `playwright.config.ts` - Playwright configuration
-- Environment variables in `deploy/env/dev.env`
-- Automatically starts dev stack unless `SKIP_DEV_STACK=true`
+See **[docs/E2E_TESTING.md](../docs/E2E_TESTING.md)** for complete details on:
+- Test structure and test suites
+- Running tests locally (headed, debug, reports)
+- CI integration and workflow
+- Configuration and environment variables
+- Test development best practices
+- Troubleshooting and debugging
+- Future enhancements

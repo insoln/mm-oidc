@@ -20,21 +20,22 @@ This document captures the initial architecture for the Mattermost OIDC plugin. 
 - **Storage** – leverages Mattermost plugin KV store for ephemeral session data (state, nonce) and encrypted refresh tokens.
 - **Observability Hooks** – structured logging (Zap), metrics (Prometheus counters/histograms), and tracing integration via OpenTelemetry.
 
-The server is written in Go, uses Go modules, and targets Go 1.22 or newer. The current codebase already includes the production skeleton: configuration validation, health/login/callback HTTP endpoints, and a reusable HTTP client. The actual Authorization Code + PKCE flow, claim mapping, and storage layers will be implemented on top of this foundation.
+The server is written in Go, uses Go modules, and targets Go 1.22 or newer. The implementation includes configuration validation, health/login/callback HTTP endpoints, Authorization Code + PKCE flow, claim mapping, user provisioning, and session management via the plugin KV store.
 
 ### Webapp (`webapp/`)
 
-- **Login Entry Point** – React component injects a "Login with Keycloak" (or provider-specific) CTA into the Mattermost login UI. (The logout endpoint remains available for future wiring but currently has no first-party trigger.)
-- **State Feedback** – surfaces error banners, success messages, and loading indicators derived from query parameters or Redux state.
-- **Admin Console UI** – configuration form embedded in Mattermost's system console, validating input client-side and syncing with the server via the plugin API.
+- **Minimal Bundle** – The webapp provides a minimal plugin registration bundle (~281 bytes). 
+- **Backend-Driven UI** – The plugin's landing page and login flow are served by the Go backend at `/plugins/com.mm.oidc/`.
+- **Admin Console** – Configuration is managed through Mattermost's native plugin settings defined in `plugin.json`.
+- **Future Extensibility** – The webapp structure supports future admin console customizations via `registerAdminConsoleCustomSetting`.
 
-The webapp is built with React + TypeScript, PostCSS modules, and Vite for bundling. It exports a static bundle consumed by Mattermost during plugin load.
+The webapp is built with React + TypeScript and Vite for bundling. It exports a minimal static bundle consumed by Mattermost during plugin load.
 
 ### Docs & Ops (`docs/`, `deploy/`, `scripts/`)
 
-- `docs/` – architecture notes, runbooks, threat models, compliance checklists, plus environment guides (see `docs/DEV_ENV.md`).
-- `deploy/` – Helm chart and Kustomize bases for packaging the plugin along with Mattermost & Keycloak dev stacks; contains `docker-compose.dev.yml` for local/CI smoke tests.
-- `scripts/` – repeatable automation (bootstrap dev env, generate certificates, run integration suites).
+- `docs/` – Architecture overview, user guide, developer guide, environment setup (DEV_ENV.md), E2E testing guide, proxy guide, and Keycloak setup instructions.
+- `deploy/` – Docker Compose development stack (`docker-compose.dev.yml`) with Mattermost, Keycloak, Postgres, and Nginx proxy; includes environment configuration templates.
+- `scripts/` – Automation for dev stack management (`dev-up.sh`, `dev-down.sh`, `dev-logs.sh`), bootstrap scripts, and test harnesses (`e2e-test.sh`, `test-proxy.sh`).
 
 ## Configuration Model
 
@@ -69,15 +70,14 @@ Validation logic ensures:
 
 ## Testing Strategy
 
-- **Unit tests** – Go tests for handlers, claim mapping, config validation; Jest + React Testing Library for UI.
-- **Contract tests** – use `ory/dockertest` or `testcontainers-go` to spin up ephemeral Keycloak + Mattermost instances verifying auth flows.
-- **End-to-end** – Cypress suite running against docker-compose stack in CI.
-- **Security tests** – ZAP baseline scans and dependency scanning as part of release workflow.
+- **Unit tests** – Go tests (`*_test.go`) for handlers, claim mapping, config validation; Vitest for minimal webapp bundle.
+- **End-to-end** – Playwright test suite validates complete OIDC flows against docker-compose stack (see [docs/E2E_TESTING.md](E2E_TESTING.md)).
+- **Integration** – Docker Compose dev stack provides repeatable environment for manual and automated testing.
+- **Security** – GitHub Advisory Database checks for dependencies, CodeQL scans for vulnerabilities.
 
 ## Release & Deployment
 
-- CI builds versioned plugin bundles, signs them, and uploads to `build/<version>`.
-- `deploy/helm` packages facilitate installation into Kubernetes clusters; docker-compose files support local validation.
+- CI builds versioned plugin bundles and uploads to `build/plugins/`.
+- Docker Compose files in `deploy/` support local validation and development.
 - Release notes summarize features, fixes, and security considerations; Semantic Versioning strictly enforced.
-
-This document is the starting point—update it as implementation details solidify.
+- Plugin can be deployed to any Mattermost v9.x+ instance via System Console upload or programmatic installation.

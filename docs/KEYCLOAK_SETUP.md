@@ -4,7 +4,7 @@ This document walks you through preparing a Keycloak 25.x realm and client for t
 
 ## Prerequisites
 
-- Keycloak 25.x (modern admin console). Legacy console (≤17) instructions are included later.
+- Keycloak 25.x+ (modern admin console)
 - Administrator account with permission to create realms, clients, roles, and users.
 - Target Mattermost site URL (for example `https://chat.example.com`).
 - Redirect endpoint determined during plugin installation: `https://<mattermost-host>/plugins/com.mm.oidc/callback`.
@@ -76,23 +76,7 @@ When you configure the plugin, you will need:
 
 Store these in a secure secret manager until you enter them into the Mattermost System Console.
 
-## 7. Legacy admin console (Keycloak ≤17)
-
-If you still use the old console (`https://<host>/auth/admin/master/console/`):
-
-1. **Realm** – open the dropdown → **Add Realm** → name → **Create**.
-2. **Client** – **Clients → Create** → supply `Client ID` and choose **OpenID Connect** → **Save**.
-3. **Settings** tab:
-   - **Access Type**: *Confidential*
-   - Enable **Standard Flow Enabled**, disable **Implicit Flow** and **Direct Access Grants**
-   - **Valid Redirect URIs**: `https://<mattermost-host>/plugins/com.mm.oidc/callback`
-   - **Web Origins**: `https://<mattermost-host>`
-   - Click **Save**
-4. **Credentials** tab – copy the generated secret.
-5. **Mappers** tab – create the entries listed in section 3.
-6. **Roles** tab – add the optional `system_admin` client role and assign it via **Users → Role Mappings**.
-
-## 8. Automating via scripts/dev-bootstrap.sh
+## 7. Automating via scripts/dev-bootstrap.sh
 
 The repository’s dev tooling can provision the entire realm+client automatically:
 
@@ -108,7 +92,7 @@ The repository’s dev tooling can provision the entire realm+client automatical
 
 Review the script for command-by-command details if you need to replicate the automation in your own infrastructure-as-code.
 
-## 9. Validate with Playwright
+## 8. Validate with Playwright
 
 Once Keycloak is configured (manually or via automation), run the Playwright flow to confirm the login succeeds end-to-end:
 
@@ -118,7 +102,7 @@ Once Keycloak is configured (manually or via automation), run the Playwright flo
 
 The test suite launches the OIDC flow, signs in through Keycloak, and verifies that Mattermost receives the correct cookies. Keep the documentation and the automated tests in sync so they describe the same sequence of actions.
 
-## Troubleshooting tips
+## 9. Troubleshooting tips
 
 - **Invalid redirect URI** – double-check the exact scheme/host/port in both the Keycloak client and Mattermost’s plugin settings.
 - **Missing claims** – ensure every mapper is set to include values in the ID token; the plugin logs which claims are missing at the `DEBUG` level.
