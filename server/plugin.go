@@ -148,6 +148,7 @@ func (p *Plugin) getRouter() http.Handler {
 		mux.HandleFunc("/health", p.handleHealth)
 		mux.HandleFunc("/login", p.handleLogin)
 		mux.HandleFunc("/callback", p.handleCallback)
+		mux.HandleFunc("/complete", p.handleMobileComplete)
 		mux.HandleFunc("/logout", p.handleLogout)
 		p.router = mux
 	}
@@ -346,6 +347,9 @@ func (p *Plugin) handleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Check if this is a mobile/desktop client login
+	isMobile := r.URL.Query().Get("isMobile") == "true"
+
 	state, err := generateRandomString(stateBytes)
 	if err != nil {
 		p.API.LogError("failed to generate state", "error", err.Error())
@@ -379,6 +383,7 @@ func (p *Plugin) handleLogin(w http.ResponseWriter, r *http.Request) {
 		Nonce:        nonce,
 		CodeVerifier: codeVerifier,
 		CreatedAt:    time.Now().Unix(),
+		IsMobile:     isMobile,
 	}
 	if err := p.saveAuthSession(state, session); err != nil {
 		p.API.LogError("failed to persist auth session", "error", err.Error())
@@ -386,7 +391,7 @@ func (p *Plugin) handleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	p.API.LogDebug("redirecting to OIDC provider", "state", state)
+	p.API.LogDebug("redirecting to OIDC provider", "state", state, "is_mobile", isMobile)
 	http.Redirect(w, r, authorizeURL, http.StatusFound)
 }
 
@@ -445,6 +450,24 @@ func (p *Plugin) handleCallback(w http.ResponseWriter, r *http.Request) {
 		} else {
 			p.writeFriendlyError(w, http.StatusInternalServerError, "We couldn't finish signing you in", "Mattermost was unable to create or update your account. Please try again or contact your system administrator.")
 		}
+		return
+	}
+
+	// For mobile/desktop clients, redirect to the completion endpoint with tokens
+	if session.IsMobile {
+		createdSession, err := p.createUserSession(user)
+		if err != nil {
+			p.API.LogError("failed to create session for mobile", "state", state, "error", err.Error())
+			p.writeFriendlyError(w, http.StatusInternalServerError, "Unable to finish signing you in", "We couldn't establish a Mattermost session. Please try again.")
+			return
+		}
+
+		if err := p.persistSessionTokens(createdSession, tokens, cfg); err != nil {
+			p.API.LogWarn("failed to persist session tokens", "state", state, "error", err.Error())
+		}
+
+		p.API.LogDebug("authentication successful for mobile", "sub", profile.Subject, "user_id", user.Id)
+		p.redirectToMobileComplete(w, r, createdSession)
 		return
 	}
 
@@ -792,4 +815,138 @@ func requestIsSecure(r *http.Request, cfg *Configuration) bool {
 
 func htmlEscape(value string) string {
 	return template.HTMLEscapeString(value)
+}
+
+// createUserSession creates a Mattermost session for the given user without setting cookies.
+func (p *Plugin) createUserSession(user *model.User) (*model.Session, error) {
+	session := &model.Session{UserId: user.Id, Roles: strings.TrimSpace(user.Roles)}
+	if session.Roles == "" {
+		session.Roles = model.SystemUserRoleId
+	}
+	session.PreSave()
+	session.Id = ""
+
+	created, appErr := p.API.CreateSession(session)
+	if appErr != nil {
+		return nil, fmt.Errorf("create session: %w", appErr)
+	}
+
+	return created, nil
+}
+
+// redirectToMobileComplete redirects to the /complete endpoint with session tokens for mobile/desktop clients.
+func (p *Plugin) redirectToMobileComplete(w http.ResponseWriter, r *http.Request, session *model.Session) {
+	cfg := p.getConfiguration()
+	
+	// Build the complete URL with tokens as query parameters
+	completeURL, err := url.Parse(cfg.RedirectURL)
+	if err != nil {
+		p.API.LogError("failed to parse redirect URL", "error", err.Error())
+		http.Error(w, "Configuration error", http.StatusInternalServerError)
+		return
+	}
+
+	// Replace the path to point to our complete endpoint
+	completeURL.Path = fmt.Sprintf("/plugins/%s/complete", pluginID)
+	
+	q := completeURL.Query()
+	q.Set("MMAUTHTOKEN", session.Token)
+	q.Set("MMUSERID", session.UserId)
+	completeURL.RawQuery = q.Encode()
+
+	http.Redirect(w, r, completeURL.String(), http.StatusFound)
+}
+
+// handleMobileComplete serves the completion page that mobile/desktop clients can parse.
+func (p *Plugin) handleMobileComplete(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		w.Header().Set("Allow", http.MethodGet)
+		http.Error(w, http.StatusText(http.StatusMethodNotAllowed), http.StatusMethodNotAllowed)
+		return
+	}
+
+	authToken := r.URL.Query().Get("MMAUTHTOKEN")
+	userID := r.URL.Query().Get("MMUSERID")
+
+	if authToken == "" || userID == "" {
+		http.Error(w, "Missing authentication parameters", http.StatusBadRequest)
+		return
+	}
+
+	cfg := p.getConfiguration()
+	mmCfg := p.API.GetConfig()
+	
+	// Get the site URL for the mattermost:// redirect
+	siteURL := "/"
+	if mmCfg != nil && mmCfg.ServiceSettings.SiteURL != nil {
+		if site := strings.TrimSpace(*mmCfg.ServiceSettings.SiteURL); site != "" {
+			siteURL = site
+		}
+	} else if cfg != nil && strings.TrimSpace(cfg.RedirectURL) != "" {
+		if parsed, err := url.Parse(cfg.RedirectURL); err == nil {
+			parsed.Path = "/"
+			parsed.RawQuery = ""
+			parsed.Fragment = ""
+			siteURL = parsed.String()
+		}
+	}
+
+	// Build the mattermost:// URL for the desktop app
+	mattermostURL := fmt.Sprintf("mattermost://%s/chat/login/desktop?MMAUTHTOKEN=%s&MMUSERID=%s",
+		extractHost(siteURL), url.QueryEscape(authToken), url.QueryEscape(userID))
+
+	// Render an HTML page that will trigger the desktop app redirect
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	fmt.Fprintf(w, `<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="utf-8" />
+	<title>Redirecting to Mattermost App</title>
+	<style>
+		body { font-family: -apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif; margin: 0; padding: 2rem; background: #0f172a; color: #f1f5f9; }
+		.card { max-width: 640px; margin: 0 auto; background: rgba(15,23,42,0.85); border-radius: 16px; padding: 2rem; box-shadow: 0 15px 60px rgba(15,23,42,0.4); text-align: center; }
+		h1 { margin-top: 0; font-size: 1.8rem; }
+		p { line-height: 1.5; }
+		.spinner { border: 4px solid rgba(56,189,248,0.2); border-top: 4px solid #38bdf8; border-radius: 50%%; width: 40px; height: 40px; animation: spin 1s linear infinite; margin: 2rem auto; }
+		@keyframes spin { 0%% { transform: rotate(0deg); } 100%% { transform: rotate(360deg); } }
+		.actions { margin-top: 1.5rem; }
+		a.primary { display: inline-block; padding: 0.85rem 1.6rem; border-radius: 999px; font-weight: 600; background: #38bdf8; color: #0f172a; text-decoration: none; }
+		a.primary:hover { opacity: 0.9; }
+	</style>
+	<script>
+		// Automatically try to open the desktop app
+		window.onload = function() {
+			window.location.href = '%s';
+			// Show manual link after a delay
+			setTimeout(function() {
+				document.getElementById('manual-link').style.display = 'block';
+				document.getElementById('spinner').style.display = 'none';
+			}, 3000);
+		};
+	</script>
+</head>
+<body>
+	<main class="card">
+		<h1>Redirecting to Mattermost</h1>
+		<div id="spinner" class="spinner"></div>
+		<p>Opening the Mattermost desktop app...</p>
+		<div id="manual-link" class="actions" style="display: none;">
+			<p>If the app didn't open automatically:</p>
+			<a class="primary" href="%s">Click here to open Mattermost</a>
+		</div>
+	</main>
+</body>
+</html>`, mattermostURL, mattermostURL)
+}
+
+// extractHost extracts the host from a URL string for use in mattermost:// protocol.
+func extractHost(urlStr string) string {
+	parsed, err := url.Parse(urlStr)
+	if err != nil {
+		return "localhost"
+	}
+	if parsed.Host != "" {
+		return parsed.Host
+	}
+	return "localhost"
 }
