@@ -1,10 +1,11 @@
 # Mattermost OIDC Plugin – User Guide
 
-This guide walks system administrators through installing, configuring, and validating the OIDC plugin across three common scenarios:
+This guide walks system administrators through installing, configuring, and validating the OIDC plugin across two deployment scenarios:
 
 1. Adding the plugin to an already running Mattermost cluster.
-2. Exercising the plugin in the standalone Docker stack that ships with this repo.
-3. Fronting Mattermost with the provided proxy container (or an equivalent Ingress/Nginx deployment) so `/login` automatically reroutes users into the plugin flow.
+2. Fronting Mattermost with the provided proxy container (or an equivalent Ingress/Nginx deployment) so `/login` automatically reroutes users into the plugin flow.
+
+For developer workflows (local Docker stack, automated tests, packaging from source), refer to [docs/DEVELOPER_GUIDE.md](DEVELOPER_GUIDE.md).
 
 Each section contains prerequisites, ordered steps, verification tips, and explicit limitations so you can decide which deployment mode matches your environment.
 
@@ -21,8 +22,8 @@ Each section contains prerequisites, ordered steps, verification tips, and expli
 ### Step-by-step
 
 1. **Download the plugin package**
-   - Preferred: grab the latest signed archive from [GitHub Releases](https://github.com/insoln/mm-oidc/releases) (`mm-oidc.tar.gz`).
-   - Alternate: run `make package` and copy `build/plugins/mm-oidc.tar.gz` to the host that can access System Console.
+  - Preferred: grab the latest signed archive from [GitHub Releases](https://github.com/insoln/mm-oidc/releases) (`mm-oidc.tar.gz`).
+  - Need to build from source? Follow the packaging steps in [docs/DEVELOPER_GUIDE.md](DEVELOPER_GUIDE.md).
 2. **Provision (or reuse) a confidential client in your IdP**
   - Follow the dedicated Keycloak instructions in [docs/KEYCLOAK_SETUP.md](docs/KEYCLOAK_SETUP.md) or replicate them for your IdP of choice.
    - Required mappers: `preferred_username`, `given_name`, `family_name`, `full_name`, `email`, and (optionally) a client-role mapper that emits `system_admin`.
@@ -40,17 +41,16 @@ Each section contains prerequisites, ordered steps, verification tips, and expli
      - Toggle `Allow insecure issuer` **off** outside disposable labs.
    - Click **Save** and use **Start Login** to verify the round-trip.
 5. **Roll out to users**
-   - Link the plugin landing page (`/plugins/com.mm.oidc/`) from your login experience or add a reverse-proxy rule (see section 3) so the plugin drives every interactive login.
+  - Link the plugin landing page (`/plugins/com.mm.oidc/`) from your login experience or add a reverse-proxy rule (see section 2) so the plugin drives every interactive login.
 
 ### Verification
 
-Run the full Playwright regression locally to confirm every documented step succeeds:
+1. Sign out of Mattermost or open a private browsing window.
+2. Navigate to `https://<mattermost-host>/plugins/com.mm.oidc/` and click **Start Login**.
+3. Complete authentication with your Identity Provider.
+4. Confirm the Mattermost UI shows the expected user details and that the `MMAUTHTOKEN` cookie is present in your browser.
 
-```bash
-./scripts/e2e-test.sh
-```
-
-The script compiles the plugin if needed, starts the dev stack, and executes `tests/oidc-flow.spec.ts`, mirroring the manual steps above.
+Automated regression scripts live in [docs/DEVELOPER_GUIDE.md](DEVELOPER_GUIDE.md) if you need repeatable validation for CI.
 
 ### Known limitations in vanilla Mattermost
 
@@ -60,55 +60,11 @@ The script compiles the plugin if needed, starts the dev stack, and executes `te
 
 ---
 
-## 2. Use the plugin inside the standalone dev stack
-
-The repository ships with a fully automated Docker Compose stack that bootstraps Mattermost, Keycloak, Postgres backends, and the proxy container. This is ideal for local validation, demos, and CI.
-
-### Start the stack
-
-```bash
-./scripts/dev-up.sh
-```
-
-What the script does:
-
-1. Copies `deploy/env/dev.env.example` to `deploy/env/dev.env` on first run and exports every variable.
-2. Runs `make package` to build `build/plugins/mm-oidc.tar.gz`.
-3. Launches [deploy/docker-compose.dev.yml](deploy/docker-compose.dev.yml) and waits for healthy containers.
-4. Executes [scripts/dev-bootstrap.sh](scripts/dev-bootstrap.sh) to:
-   - Provision the Keycloak realm/client, required mappers, and the `system_admin` client role.
-   - Create the Mattermost user `mm-admin` and grant the System Admin permission when the Keycloak role is present.
-   - Upload and enable the freshly built plugin, then sync all plugin settings.
-
-### Exercise the login flow
-
-1. Open `http://mattermost-proxy.127.0.0.1.nip.io:8787/` in a browser (the proxy preserves the configured site URL).
-2. Sign out of Mattermost if you are already logged in.
-3. Navigate to `/plugins/com.mm.oidc/` or use the “Start Login” button inside the left-hand plugin panel.
-4. Authenticate with the seeded Keycloak admin (`admin / Keycloak123!`).
-5. After the redirect, confirm the Mattermost UI shows you as `mm-admin` and that the `MMAUTHTOKEN` cookie exists in your browser.
-
-### Shut everything down
-
-```bash
-./scripts/dev-down.sh
-```
-
-Volumes stay intact so you can resume later. Use `docker compose -f deploy/docker-compose.dev.yml down -v` if you need a clean reset.
-
-### Dev-stack limitations
-
-- The stack intentionally exposes HTTP endpoints on `127.0.0.1.nip.io` and should **never** be published to the internet.
-- SMTP/SMS MFA integrations are not wired; only username/password authentication is available in Keycloak.
-- The proxy rewrites `/login` only for browser GET requests—API requests or CLI logins still hit the upstream Mattermost port (`8065`).
-
----
-
-## 3. Deploy the proxy container (Docker Compose or Kubernetes)
+## 2. Deploy the proxy container (Docker Compose or Kubernetes)
 
 Redirecting `/login` to `/plugins/com.mm.oidc/login` requires a front proxy that can inspect cookies and selectively rewrite requests. The repository ships with a ready-to-use Nginx container that you can copy into your own stack.
 
-### 3.1 Docker Compose
+### 2.1 Docker Compose
 
 1. **Import the service definition**
    - Reuse the `mattermost-proxy` service block from [`deploy/docker-compose.dev.yml`](deploy/docker-compose.dev.yml) and adjust the `ports`, `MM_SITE_URL`, and hostname values to match your environment.
@@ -119,10 +75,11 @@ Redirecting `/login` to `/plugins/com.mm.oidc/login` requires a front proxy that
 3. **Expose the proxy**
    - Publish the proxy’s port(s) to your load balancer or ingress; the upstream Mattermost port should remain internal.
 4. **Validate**
-   - Run `./scripts/test-proxy.sh` to execute the curl smoke tests described in [docs/PROXY_IMPLEMENTATION_SUMMARY.md](docs/PROXY_IMPLEMENTATION_SUMMARY.md#тесты).
-   - Follow up with `./scripts/test-proxy-all.sh` to execute the browser suite `tests/proxy-redirect.spec.ts`.
+  - In a private browser window, visit the proxy host and confirm unauthenticated requests redirect to `/plugins/com.mm.oidc/login`.
+  - Hit `/api/v4/users/login` with `curl -H 'Accept: application/json'` and verify the response is not a redirect.
+  - Open `/plugins/com.mm.oidc/callback` directly to ensure it stays reachable (no redirect loops) and that WebSocket upgrades still succeed via `/api/v4/websocket`.
 
-### 3.2 Kubernetes (example)
+### 2.2 Kubernetes (example)
 
 1. **ConfigMap** – create a ConfigMap with the Nginx template:
 
@@ -175,8 +132,6 @@ spec:
 
 3. **Ingress / Service** – expose the proxy via your preferred ingress controller, ensuring sticky sessions and TLS termination live at the edge.
 4. **Plugin config** – set Mattermost’s `SiteURL` to the proxy host and keep the plugin’s redirect URL aligned (e.g., `https://chat.example.com/plugins/com.mm.oidc/callback`).
-5. **CI validation** – bake the Playwright regression into your pipeline by running `./scripts/test-proxy-all.sh` against a staging namespace (requires port-forwarding or an exposed endpoint).
-
 ### Proxy limitations
 
 - JSON API clients that send `Accept: application/json` bypass the redirect by design; keep legacy automation pointed at the upstream `/api/v4` endpoints.
@@ -184,10 +139,3 @@ spec:
 - If you run multiple Mattermost instances behind the proxy, configure sticky sessions or an external session store so `MMAUTHTOKEN` cookies stay valid across hosts.
 
 ---
-
-## Surfacing the instructions to end users
-
-- The main README links directly to this guide for administrators.
-- CLI/automation steps (packaging, testing, architecture deep dives) continue to live under `docs/`, and the README now points developers to those references instead of duplicating them here.
-
-Use this document as the canonical reference when rolling out or troubleshooting the plugin; every update must stay in sync with the automated Playwright suites so the documented steps remain accurate.

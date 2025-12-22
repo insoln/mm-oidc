@@ -11,11 +11,12 @@ Securely connect Mattermost Server v9.x+ to modern OpenID Connect providers (Key
 
 ## Choose your deployment path
 
-Use the [User Guide](docs/USER_GUIDE.md) for step-by-step instructions covering three supported scenarios:
+Use the [User Guide](docs/USER_GUIDE.md) for step-by-step instructions covering two supported scenarios:
 
 1. **Existing Mattermost instances** – upload `mm-oidc.tar.gz`, configure the IdP client, and validate the flow from the System Console.
-2. **Standalone stack** – run `./scripts/dev-up.sh` to launch the bundled compose environment, then explore the plugin landing page at `/plugins/com.mm.oidc/`.
-3. **Proxy-assisted login** – drop the maintained Nginx container (or Helm/K8s manifests) in front of Mattermost so `/login` automatically redirects into the plugin without touching server code.
+2. **Proxy-assisted login** – drop the maintained Nginx container (or Helm/K8s manifests) in front of Mattermost so `/login` automatically redirects into the plugin without touching server code.
+
+Need the standalone Docker stack or automation workflows? Jump to [docs/DEVELOPER_GUIDE.md](docs/DEVELOPER_GUIDE.md).
 
 ## Quick install checklist (prod environments)
 
@@ -24,7 +25,7 @@ Use the [User Guide](docs/USER_GUIDE.md) for step-by-step instructions covering 
 3. Upload `mm-oidc.tar.gz` via **System Console → Plugin Management → Plugin Upload**.
 4. Fill out the plugin settings (Issuer URL, Client ID/Secret, Scopes) in **System Console → Plugins → Mattermost OIDC**.
 5. Point users to `/plugins/com.mm.oidc/login` or enable the proxy recipe so `/login` flows through the plugin automatically.
-6. Run `./scripts/e2e-test.sh` to execute the Playwright suite and confirm the documented steps succeed end-to-end.
+6. (Optional) Validate with `./scripts/e2e-test.sh` as described in [docs/DEVELOPER_GUIDE.md](docs/DEVELOPER_GUIDE.md) before rolling out broadly.
 
 Details, screenshots, and troubleshooting tips for each step live in [docs/USER_GUIDE.md](docs/USER_GUIDE.md).
 
@@ -49,6 +50,7 @@ Looking for build, testing, or architecture details? Jump into the developer doc
 - Architecture & security notes – [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
 - Local dev stack + automation – [docs/DEV_ENV.md](docs/DEV_ENV.md)
 - Playwright tips & CI integration – [docs/E2E_TESTING.md](docs/E2E_TESTING.md)
-- Proxy internals and redirect research – [docs/PROXY_IMPLEMENTATION_SUMMARY.md](docs/PROXY_IMPLEMENTATION_SUMMARY.md)
+- Proxy internals and redirect research – [docs/PROXY_GUIDE.md](docs/PROXY_GUIDE.md)
+- Developer workflows (packaging, dev stack, tests) – [docs/DEVELOPER_GUIDE.md](docs/DEVELOPER_GUIDE.md)
 
 Please keep user-facing instructions inside [docs/USER_GUIDE.md](docs/USER_GUIDE.md) up to date whenever you change plugin behavior or deployment requirements.
