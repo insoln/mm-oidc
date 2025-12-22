@@ -47,10 +47,18 @@ test.describe('OIDC Authentication Flow', () => {
     // Step 5: Submit login form
     await page.click('input[type="submit"], button[type="submit"]');
     
-    // Step 6: Wait for redirect back to Mattermost
-    await page.waitForURL(new RegExp(MM_SITE_URL), { timeout: 15000 });
+    // Step 6: Wait for redirect back to Mattermost (any route under the configured site URL).
+    // NOTE: This timeout is intentionally higher than typical navigation waits to account
+    // for slower CI/dev Docker environments. If this frequently approaches the limit, treat it
+    // as a regression in the auth/redirect path rather than increasing the timeout further.
+    await expect.poll(async () => page.url(), { timeout: 15000 }).toContain(MM_SITE_URL);
     
-    // Step 7: Verify successful login by checking for Mattermost auth cookie
+    // Step 7: Verify successful login by checking for Mattermost auth cookie, using the same
+    // bounded timeout as the redirect above to avoid masking slow auth flows.
+    await expect.poll(async () => {
+      const cookies = await page.context().cookies();
+      return cookies.some(c => c.name === 'MMAUTHTOKEN' || c.name === 'MMUSERID');
+    }, { timeout: 15000 }).toBe(true);
     const cookies = await page.context().cookies();
     const authCookie = cookies.find(c => c.name === 'MMAUTHTOKEN' || c.name === 'MMUSERID');
     expect(authCookie).toBeDefined();

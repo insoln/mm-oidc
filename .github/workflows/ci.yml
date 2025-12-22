@@ -144,8 +144,7 @@ jobs:
           CI: true
 
       - name: Run Playwright tests
-        working-directory: e2e
-        run: corepack yarn test
+        run: ./scripts/e2e-test.sh
         env:
           CI: true
           SKIP_DEV_STACK: true

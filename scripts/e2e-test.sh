@@ -3,12 +3,22 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 E2E_DIR="${ROOT_DIR}/e2e"
+ENV_FILE="${ROOT_DIR}/deploy/env/dev.env"
 
 # Colors for output
 GREEN='\033[0;32m'
 RED='\033[0;31m'
 YELLOW='\033[1;33m'
 NC='\033[0m' # No Color
+
+if [[ -f "${ENV_FILE}" ]]; then
+  set -a
+  # shellcheck disable=SC1090
+  source "${ENV_FILE}"
+  set +a
+else
+  echo -e "${YELLOW}[e2e-test] ${ENV_FILE} not found; falling back to default Playwright env vars.${NC}"
+fi
 
 echo -e "${GREEN}[e2e-test] Running Playwright E2E tests${NC}"
 

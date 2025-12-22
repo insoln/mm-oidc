@@ -27,8 +27,9 @@ type Plugin struct {
 	configuration     *Configuration
 	metadata          *OIDCMetadata
 
-	httpClient *http.Client
-	router     http.Handler
+	httpClient     *http.Client
+	httpClientOnce sync.Once
+	router         http.Handler
 
 	oidcProvider *oidc.Provider
 }
@@ -40,15 +41,13 @@ func NewPlugin() *Plugin {
 
 // OnActivate prepares long-lived dependencies like the outbound HTTP client.
 func (p *Plugin) OnActivate() error {
-	p.httpClient = &http.Client{
-		Timeout: httpClientTimeout,
-	}
-
+	p.ensureHTTPClient()
 	return p.OnConfigurationChange()
 }
 
 // OnConfigurationChange reloads and validates the latest settings from the System Console.
 func (p *Plugin) OnConfigurationChange() error {
+	p.ensureHTTPClient()
 	var config Configuration
 	if err := p.API.LoadPluginConfiguration(&config); err != nil {
 		p.API.LogError("failed to load configuration", "error", err.Error())
@@ -113,6 +112,12 @@ func (p *Plugin) setProvider(provider *oidc.Provider) {
 	p.configurationLock.Lock()
 	defer p.configurationLock.Unlock()
 	p.oidcProvider = provider
+}
+
+func (p *Plugin) ensureHTTPClient() {
+	p.httpClientOnce.Do(func() {
+		p.httpClient = &http.Client{Timeout: httpClientTimeout}
+	})
 }
 
 func (p *Plugin) getMetadata() *OIDCMetadata {
