@@ -387,7 +387,7 @@ services:
    docker compose logs -f
    ```
 
-5. **Откройте браузер** и перейдите на `http://localhost` (или настроенный домен)
+5. **Откройте браузер** и перейдите на `http://proxy.127.0.0.1.nip.io:8787` (или собственный nip.io-домен)
 
 6. **Проверьте редирект**:
    - Без cookie должен быть редирект на `/plugins/com.mm.oidc/login`
@@ -423,7 +423,7 @@ services:
 
 ```bash
 # Запрос без cookie
-curl -v http://localhost/ 2>&1 | grep -E "(Location|HTTP)"
+curl -v http://proxy.127.0.0.1.nip.io:8787/ 2>&1 | grep -E "(Location|HTTP)"
 
 # Ожидается:
 # HTTP/1.1 302 Found
@@ -434,7 +434,7 @@ curl -v http://localhost/ 2>&1 | grep -E "(Location|HTTP)"
 
 ```bash
 # Получите валидную MMAUTHTOKEN через браузер после логина
-curl -v -H "Cookie: MMAUTHTOKEN=your_token_here" http://localhost/ 2>&1 | grep HTTP
+curl -v -H "Cookie: MMAUTHTOKEN=your_token_here" http://proxy.127.0.0.1.nip.io:8787/ 2>&1 | grep HTTP
 
 # Ожидается:
 # HTTP/1.1 200 OK
@@ -443,7 +443,7 @@ curl -v -H "Cookie: MMAUTHTOKEN=your_token_here" http://localhost/ 2>&1 | grep H
 ### Сценарий 3: API запросы не должны редиректиться
 
 ```bash
-curl -v http://localhost/api/v4/users/me 2>&1 | grep HTTP
+curl -v http://proxy.127.0.0.1.nip.io:8787/api/v4/users/me 2>&1 | grep HTTP
 
 # Ожидается:
 # HTTP/1.1 401 Unauthorized (но не 302 редирект)
@@ -453,7 +453,7 @@ curl -v http://localhost/api/v4/users/me 2>&1 | grep HTTP
 
 ```bash
 curl -v -H "Upgrade: websocket" -H "Connection: upgrade" \
-  http://localhost/api/v4/websocket 2>&1 | grep HTTP
+    http://proxy.127.0.0.1.nip.io:8787/api/v4/websocket 2>&1 | grep HTTP
 
 # Ожидается:
 # HTTP/1.1 101 Switching Protocols (или проксирование на backend)

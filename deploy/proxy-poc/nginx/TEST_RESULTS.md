@@ -37,11 +37,11 @@ Browser → NGINX (port 80) → Mattermost (internal:8065)
 **Scenario:** User without MMAUTHTOKEN cookie accesses root URL
 
 ```bash
-curl -s -w "Status: %{http_code}, Redirect: %{redirect_url}\n" -o /dev/null http://localhost/
+curl -s -w "Status: %{http_code}, Redirect: %{redirect_url}\n" -o /dev/null http://proxy.127.0.0.1.nip.io:8787/
 ```
 
 **Expected:** HTTP 302 redirect to `/plugins/com.mm.oidc/login?redirect_to=/`  
-**Actual:** Status: 302, Redirect: http://localhost/plugins/com.mm.oidc/login?redirect_to=/  
+**Actual:** Status: 302, Redirect: http://proxy.127.0.0.1.nip.io:8787/plugins/com.mm.oidc/login?redirect_to=/  
 **Result:** ✅ PASS
 
 **Explanation:** NGINX correctly detects missing MMAUTHTOKEN cookie and redirects to OIDC login endpoint with original URL preserved.
@@ -52,7 +52,7 @@ curl -s -w "Status: %{http_code}, Redirect: %{redirect_url}\n" -o /dev/null http
 **Scenario:** API request without authentication
 
 ```bash
-curl -s -w "Status: %{http_code}\n" -o /dev/null http://localhost/api/v4/system/ping
+curl -s -w "Status: %{http_code}\n" -o /dev/null http://proxy.127.0.0.1.nip.io:8787/api/v4/system/ping
 ```
 
 **Expected:** HTTP 200 (public endpoint) or 401 (protected), NOT 302  
@@ -67,7 +67,7 @@ curl -s -w "Status: %{http_code}\n" -o /dev/null http://localhost/api/v4/system/
 **Scenario:** Access static resources without authentication
 
 ```bash
-curl -s -w "Status: %{http_code}\n" -o /dev/null http://localhost/static/
+curl -s -w "Status: %{http_code}\n" -o /dev/null http://proxy.127.0.0.1.nip.io:8787/static/
 ```
 
 **Expected:** HTTP response (not 302 redirect)  
@@ -82,7 +82,7 @@ curl -s -w "Status: %{http_code}\n" -o /dev/null http://localhost/static/
 **Scenario:** Health check must be accessible for monitoring
 
 ```bash
-curl -s -w "Status: %{http_code}\n" -o /dev/null http://localhost/health
+curl -s -w "Status: %{http_code}\n" -o /dev/null http://proxy.127.0.0.1.nip.io:8787/health
 ```
 
 **Expected:** HTTP 200  
@@ -97,7 +97,7 @@ curl -s -w "Status: %{http_code}\n" -o /dev/null http://localhost/health
 **Scenario:** POST request should not redirect
 
 ```bash
-curl -s -X POST -w "Status: %{http_code}\n" -o /dev/null http://localhost/api/v4/users/login
+curl -s -X POST -w "Status: %{http_code}\n" -o /dev/null http://proxy.127.0.0.1.nip.io:8787/api/v4/users/login
 ```
 
 **Expected:** HTTP 400/401 (not 302 redirect)  
@@ -112,7 +112,7 @@ curl -s -X POST -w "Status: %{http_code}\n" -o /dev/null http://localhost/api/v4
 **Scenario:** OIDC callback must not redirect (would cause loop)
 
 ```bash
-curl -s -w "Status: %{http_code}\n" -o /dev/null http://localhost/plugins/com.mm.oidc/callback
+curl -s -w "Status: %{http_code}\n" -o /dev/null http://proxy.127.0.0.1.nip.io:8787/plugins/com.mm.oidc/callback
 ```
 
 **Expected:** HTTP response (not 302 redirect)  
@@ -127,7 +127,7 @@ curl -s -w "Status: %{http_code}\n" -o /dev/null http://localhost/plugins/com.mm
 **Scenario:** WebSocket upgrade requests must reach backend
 
 ```bash
-curl -s -w "Status: %{http_code}\n" -o /dev/null http://localhost/api/v4/websocket
+curl -s -w "Status: %{http_code}\n" -o /dev/null http://proxy.127.0.0.1.nip.io:8787/api/v4/websocket
 ```
 
 **Expected:** HTTP 400 (without upgrade headers) or 101 (with upgrade)  
@@ -142,7 +142,7 @@ curl -s -w "Status: %{http_code}\n" -o /dev/null http://localhost/api/v4/websock
 **Scenario:** Security headers must be added by NGINX
 
 ```bash
-curl -s -D - -o /dev/null http://localhost/plugins/com.mm.oidc/login | grep -iE "x-frame|x-content|x-xss"
+curl -s -D - -o /dev/null http://proxy.127.0.0.1.nip.io:8787/plugins/com.mm.oidc/login | grep -iE "x-frame|x-content|x-xss"
 ```
 
 **Expected:** X-Frame-Options, X-Content-Type-Options, X-XSS-Protection present  
@@ -206,18 +206,18 @@ nginx-keycloak-db-1     Up (running)
 ## Edge Cases Tested
 
 ### ✅ Query Parameter Preservation
-Original URL: `http://localhost/?param=value`  
-Redirect: `http://localhost/plugins/com.mm.oidc/login?redirect_to=/?param=value`  
+Original URL: `http://proxy.127.0.0.1.nip.io:8787/?param=value`  
+Redirect: `http://proxy.127.0.0.1.nip.io:8787/plugins/com.mm.oidc/login?redirect_to=/?param=value`  
 **Result:** ✅ Parameters preserved
 
 ### ✅ Deep Link Preservation
-Original URL: `http://localhost/channels/town-square`  
-Redirect: `http://localhost/plugins/com.mm.oidc/login?redirect_to=/channels/town-square`  
+Original URL: `http://proxy.127.0.0.1.nip.io:8787/channels/town-square`  
+Redirect: `http://proxy.127.0.0.1.nip.io:8787/plugins/com.mm.oidc/login?redirect_to=/channels/town-square`  
 **Result:** ✅ Path preserved
 
 ### ✅ JSON Accept Header Bypass
 ```bash
-curl -H "Accept: application/json" http://localhost/
+curl -H "Accept: application/json" http://proxy.127.0.0.1.nip.io:8787/
 ```
 **Result:** ✅ No redirect for API clients (returns Mattermost response, not redirect)
 

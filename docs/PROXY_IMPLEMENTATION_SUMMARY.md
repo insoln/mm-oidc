@@ -96,7 +96,7 @@ cd deploy/proxy-poc/nginx
 ./start.sh
 
 # Проверить работу
-curl -v http://localhost/
+curl -v http://proxy.127.0.0.1.nip.io:8787/
 # Должен вернуть 302 с Location: /plugins/com.mm.oidc/login
 
 # Запустить тесты
@@ -109,8 +109,8 @@ curl -v http://localhost/
 ### Доступы
 
 После запуска стека:
-- **Mattermost (через NGINX):** http://localhost
-- **Keycloak (прямой доступ):** http://localhost:8080
+- **Mattermost (через NGINX):** http://proxy.127.0.0.1.nip.io:8787
+- **Keycloak (прямой доступ):** http://keycloak.127.0.0.1.nip.io:8080
 - **Учетные данные:**
   - Mattermost admin: `mm-admin / Password123!`
   - Keycloak admin: `admin / Keycloak123!`
@@ -120,7 +120,7 @@ curl -v http://localhost/
 ```
 Browser
    ↓
-NGINX (port 80)
+NGINX (port 8787)
    ↓
 [Проверка MMAUTHTOKEN cookie]
    ↓

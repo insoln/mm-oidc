@@ -9,7 +9,7 @@ This POC demonstrates how to automatically redirect unauthenticated users to the
 ## Architecture
 
 ```
-Browser → NGINX (port 80) → Mattermost (internal:8065)
+Browser → NGINX (port 8787) → Mattermost (internal:8065)
                 ↓
           Cookie Check
                 ↓
@@ -34,7 +34,7 @@ Browser → NGINX (port 80) → Mattermost (internal:8065)
 
 - Docker and Docker Compose
 - Make (for building the plugin)
-- Port 80 and 8080 available
+- Port 8787 (proxy) and 8080 (Keycloak) available
 
 ### Start the POC
 
@@ -55,14 +55,14 @@ This will:
 ./test-curl.sh
 
 # Or test manually
-curl -v http://localhost/ 2>&1 | grep Location
+curl -v http://proxy.127.0.0.1.nip.io:8787/ 2>&1 | grep Location
 # Should redirect to /plugins/com.mm.oidc/login
 ```
 
 ### Access Points
 
-- **Mattermost (via NGINX)**: http://localhost
-- **Keycloak (direct)**: http://localhost:8080
+- **Mattermost (via NGINX)**: http://proxy.127.0.0.1.nip.io:8787
+- **Keycloak (direct)**: http://keycloak.127.0.0.1.nip.io:8080
 - **NGINX logs**: `docker compose logs -f nginx`
 
 ### Stop the POC
@@ -125,18 +125,18 @@ This runs 7 test scenarios:
 
 1. **Test redirect without cookie**:
    ```bash
-   curl -v http://localhost/
+   curl -v http://proxy.127.0.0.1.nip.io:8787/
    # Should see: Location: /plugins/com.mm.oidc/login?redirect_to=/
    ```
 
 2. **Test API doesn't redirect**:
    ```bash
-   curl -v http://localhost/api/v4/system/ping
+   curl -v http://proxy.127.0.0.1.nip.io:8787/api/v4/system/ping
    # Should see: 200 OK (not redirect)
    ```
 
 3. **Test with browser**:
-   - Open http://localhost in browser
+   - Open http://proxy.127.0.0.1.nip.io:8787 in browser
    - Should automatically redirect to OIDC login
    - After login, should have normal access
 
@@ -157,17 +157,19 @@ yarn test proxy-redirect
 Edit `.env` to customize:
 
 ```bash
-# Proxy port
-PROXY_PORT=80
+# Proxy port (exposed via nip.io hostname)
+PROXY_PORT=8787
+PROXY_HOSTNAME=proxy.127.0.0.1.nip.io
 
 # Mattermost configuration
-MM_SITE_URL=http://localhost
+MM_SITE_URL=http://proxy.127.0.0.1.nip.io:8787
 MM_ADMIN_USERNAME=mm-admin
 MM_ADMIN_PASSWORD=Password123!
 
 # Keycloak configuration  
 KC_ADMIN=admin
 KC_ADMIN_PASSWORD=Keycloak123!
+# KC_HOSTNAME=keycloak.127.0.0.1.nip.io
 ```
 
 ### NGINX Configuration

@@ -48,8 +48,9 @@ kcadm() {
 }
 
 keycloak_login() {
+  local keycloak_base="http://${KC_HOSTNAME}:${KC_HTTP_PORT}"
   kcadm config credentials \
-    --server "http://localhost:${KC_HTTP_PORT}" \
+    --server "${keycloak_base}" \
     --realm "${KC_ADMIN_REALM}" \
     --user "${KC_ADMIN}" \
     --password "${KC_ADMIN_PASSWORD}" \
@@ -57,9 +58,10 @@ keycloak_login() {
 }
 
 wait_for_keycloak() {
-  log "Waiting for Keycloak to become ready on port ${KC_HTTP_PORT}..."
+  local keycloak_base="http://${KC_HOSTNAME}:${KC_HTTP_PORT}"
+  log "Waiting for Keycloak to become ready on ${keycloak_base}..."
   local attempts=0
-  until curl -sf "http://localhost:${KC_HTTP_PORT}/realms/${KC_ADMIN_REALM}/.well-known/openid-configuration" >/dev/null; do
+  until curl -sf "${keycloak_base}/realms/${KC_ADMIN_REALM}/.well-known/openid-configuration" >/dev/null; do
     attempts=$((attempts + 1))
     if [ "${attempts}" -gt 30 ]; then
       echo "Keycloak did not become ready in time" >&2
@@ -121,12 +123,13 @@ ensure_plugin_installed() {
     return 0
   fi
 
-  run_mmctl plugin disable "${PLUGIN_ID}" >/dev/null || true
-  log "Uploading plugin ${PLUGIN_ID} from ${PLUGIN_CONTAINER_PATH} (force replace)."
-  run_mmctl plugin add --force "${PLUGIN_CONTAINER_PATH}" >/dev/null
+  if ! run_mmctl plugin list | grep -q "${PLUGIN_ID}"; then
+    log "Uploading plugin ${PLUGIN_ID} from ${PLUGIN_CONTAINER_PATH} (force replace)."
+    run_mmctl plugin add --force "${PLUGIN_CONTAINER_PATH}" >/dev/null
+  fi
 
   log "Enabling plugin ${PLUGIN_ID}."
-  run_mmctl plugin enable "${PLUGIN_ID}" >/dev/null
+  run_mmctl plugin enable "${PLUGIN_ID}" >/dev/null || run_mmctl plugin enable "${PLUGIN_ID}" >/dev/null
 }
 
 ensure_oidc_realm() {
@@ -217,7 +220,7 @@ ensure_oidc_client() {
   local site_base="${MM_SITE_URL%/}"
   OIDC_REDIRECT_URL="${site_base}${OIDC_REDIRECT_PATH}"
   local logout_redirect="${site_base}/plugins/${PLUGIN_ID}"
-  local default_issuer="http://localhost:${KC_HTTP_PORT}/realms/${OIDC_REALM}"
+  local default_issuer="http://${KC_HOSTNAME}:${KC_HTTP_PORT}/realms/${OIDC_REALM}"
   OIDC_EFFECTIVE_ISSUER="${OIDC_ISSUER_URL:-${default_issuer}}"
 
   local client_query
@@ -536,6 +539,7 @@ main() {
   : "${OIDC_REDIRECT_PATH:?OIDC_REDIRECT_PATH must be set in ${ENV_FILE}}"
 
   KC_ADMIN_REALM="${KC_ADMIN_REALM:-master}"
+  KC_HOSTNAME="${KC_HOSTNAME:-localhost}"
   OIDC_ALLOW_INSECURE="${OIDC_ALLOW_INSECURE:-false}"
   OIDC_CLIENT_ADMIN_ROLE="${OIDC_CLIENT_ADMIN_ROLE:-system_admin}"
 

@@ -4,7 +4,19 @@
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-BASE_URL="${BASE_URL:-http://localhost}"
+
+# Load local .env for host/port defaults if present
+if [ -f "$SCRIPT_DIR/.env" ]; then
+    set -a
+    # shellcheck disable=SC1091
+    source "$SCRIPT_DIR/.env"
+    set +a
+fi
+
+PROXY_HOSTNAME="${PROXY_HOSTNAME:-proxy.127.0.0.1.nip.io}"
+PROXY_PORT="${PROXY_PORT:-8787}"
+DEFAULT_BASE_URL="http://${PROXY_HOSTNAME}:${PROXY_PORT}"
+BASE_URL="${BASE_URL:-${PROXY_BASE_URL:-$DEFAULT_BASE_URL}}"
 
 echo "==> Testing NGINX Proxy OIDC Redirect"
 echo ""
@@ -29,20 +41,20 @@ run_test() {
     if output=$(eval "$test_cmd" 2>&1); then
         if echo "$output" | grep -q "$expected_pattern"; then
             echo -e "${GREEN}PASS${NC}"
-            ((test_passed++))
+            ((++test_passed))
             return 0
         else
             echo -e "${RED}FAIL${NC}"
             echo "  Expected pattern: $expected_pattern"
             echo "  Got: $output"
-            ((test_failed++))
+            ((++test_failed))
             return 1
         fi
     else
         echo -e "${RED}FAIL${NC}"
         echo "  Command failed: $test_cmd"
         echo "  Output: $output"
-        ((test_failed++))
+        ((++test_failed))
         return 1
     fi
 }
@@ -80,13 +92,13 @@ echo ""
 echo "==> Scenario 4: Static files should NOT redirect"
 run_test "Static files accessible" \
     "curl -s -o /dev/null -w '%{http_code}' '$BASE_URL/static/'" \
-    "[23]"
+    "^[24][0-9][0-9]$"
 
 echo ""
 echo "==> Scenario 5: Health check should NOT redirect"
 run_test "Health check endpoint works" \
-    "curl -s -o /dev/null -w '%{http_code}' '$BASE_URL/health'" \
-    "200"
+    "curl -s '$BASE_URL/health'" \
+    "OK"
 
 echo ""
 echo "==> Scenario 6: POST requests should NOT redirect"

@@ -100,19 +100,19 @@ yarn playwright test proxy-redirect.spec.ts
 #### TC1: Redirect without authentication
 ```bash
 # Open browser in private/incognito mode
-# Navigate to: http://localhost/
+# Navigate to: http://proxy.127.0.0.1.nip.io:8787/
 # Expected: Redirect to /plugins/com.mm.oidc/login
 ```
 
 #### TC2: Direct URL access
 ```bash
-# Navigate to: http://localhost/channels/town-square
+# Navigate to: http://proxy.127.0.0.1.nip.io:8787/channels/town-square
 # Expected: Redirect to /plugins/com.mm.oidc/login?redirect_to=/channels/town-square
 ```
 
 #### TC3: Full login flow
 ```bash
-# Navigate to: http://localhost/
+# Navigate to: http://proxy.127.0.0.1.nip.io:8787/
 # Click "Start Login"
 # Enter Keycloak credentials (admin / Keycloak123!)
 # Expected: Redirect back to Mattermost with MMAUTHTOKEN cookie
@@ -121,37 +121,37 @@ yarn playwright test proxy-redirect.spec.ts
 
 #### TC4: API endpoint behavior
 ```bash
-curl -v http://localhost/api/v4/system/ping
+curl -v http://proxy.127.0.0.1.nip.io:8787/api/v4/system/ping
 # Expected: HTTP 200 OK (not 302 redirect)
 ```
 
 #### TC5: API auth failure
 ```bash
-curl -v http://localhost/api/v4/users/me
+curl -v http://proxy.127.0.0.1.nip.io:8787/api/v4/users/me
 # Expected: HTTP 401 Unauthorized (not 302 redirect)
 ```
 
 #### TC6: Plugin endpoints accessible
 ```bash
-curl -v http://localhost/plugins/com.mm.oidc/health
+curl -v http://proxy.127.0.0.1.nip.io:8787/plugins/com.mm.oidc/health
 # Expected: HTTP 200 with JSON response (not redirect)
 ```
 
 #### TC7: Static files accessible
 ```bash
-curl -v http://localhost/static/
+curl -v http://proxy.127.0.0.1.nip.io:8787/static/
 # Expected: HTTP response (not 302 to OIDC)
 ```
 
 #### TC8: Health check
 ```bash
-curl -v http://localhost/health
+curl -v http://proxy.127.0.0.1.nip.io:8787/health
 # Expected: HTTP 200 OK
 ```
 
 #### TC9: POST request not redirected
 ```bash
-curl -v -X POST http://localhost/api/v4/users/login \
+curl -v -X POST http://proxy.127.0.0.1.nip.io:8787/api/v4/users/login \
   -H "Content-Type: application/json" \
   -d '{"login_id":"test","password":"test"}'
 # Expected: HTTP 401 (not 302 redirect)
@@ -161,7 +161,7 @@ curl -v -X POST http://localhost/api/v4/users/login \
 ```bash
 # After logging in via browser, get MMAUTHTOKEN from cookies
 # Test with curl:
-curl -v -b "MMAUTHTOKEN=<your_token>" http://localhost/
+curl -v -b "MMAUTHTOKEN=<your_token>" http://proxy.127.0.0.1.nip.io:8787/
 # Expected: HTTP 200 with Mattermost HTML (not redirect)
 ```
 
@@ -175,7 +175,7 @@ curl -v -b "MMAUTHTOKEN=<your_token>" http://localhost/
 
 #### TC12: Security headers
 ```bash
-curl -v http://localhost/plugins/com.mm.oidc/health 2>&1 | grep -i "x-frame"
+curl -v http://proxy.127.0.0.1.nip.io:8787/plugins/com.mm.oidc/health 2>&1 | grep -i "x-frame"
 # Expected: X-Frame-Options header present
 ```
 
@@ -213,7 +213,7 @@ grep -A 5 "location /plugins/" nginx.conf
 **Debug:**
 ```bash
 # Test API directly
-curl -v http://localhost/api/v4/system/ping 2>&1 | grep -E "HTTP|Location"
+curl -v http://proxy.127.0.0.1.nip.io:8787/api/v4/system/ping 2>&1 | grep -E "HTTP|Location"
 
 # Check NGINX config
 grep -A 10 "location /api/" nginx.conf
@@ -253,8 +253,8 @@ make package
 ```bash
 # Verify services are healthy
 docker compose ps
-curl http://localhost/health
-curl http://localhost:8080/health/ready
+curl http://proxy.127.0.0.1.nip.io:8787/health
+curl http://keycloak.127.0.0.1.nip.io:8080/health/ready
 
 # Run with headed browser to see what's happening
 cd ../../../e2e
@@ -328,13 +328,13 @@ jobs:
 
 ```bash
 # Test redirect performance (no auth cookie)
-ab -n 1000 -c 10 http://localhost/
+ab -n 1000 -c 10 http://proxy.127.0.0.1.nip.io:8787/
 
 # Test authenticated requests (with cookie)
-ab -n 1000 -c 10 -C "MMAUTHTOKEN=your_token" http://localhost/
+ab -n 1000 -c 10 -C "MMAUTHTOKEN=your_token" http://proxy.127.0.0.1.nip.io:8787/
 
 # Test API endpoints
-ab -n 1000 -c 10 http://localhost/api/v4/system/ping
+ab -n 1000 -c 10 http://proxy.127.0.0.1.nip.io:8787/api/v4/system/ping
 ```
 
 ### Expected Results
