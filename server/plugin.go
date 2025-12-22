@@ -27,8 +27,9 @@ type Plugin struct {
 	configuration     *Configuration
 	metadata          *OIDCMetadata
 
-	httpClient *http.Client
-	router     http.Handler
+	httpClient     *http.Client
+	httpClientOnce sync.Once
+	router         http.Handler
 
 	oidcProvider *oidc.Provider
 }
@@ -114,11 +115,9 @@ func (p *Plugin) setProvider(provider *oidc.Provider) {
 }
 
 func (p *Plugin) ensureHTTPClient() {
-	p.configurationLock.Lock()
-	defer p.configurationLock.Unlock()
-	if p.httpClient == nil {
+	p.httpClientOnce.Do(func() {
 		p.httpClient = &http.Client{Timeout: httpClientTimeout}
-	}
+	})
 }
 
 func (p *Plugin) getMetadata() *OIDCMetadata {

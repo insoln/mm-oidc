@@ -3,7 +3,11 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
-# Allow override of compose directory (for proxy POC)
+# Allow override of compose directory (for proxy POC).
+# Usage: dev-bootstrap.sh [COMPOSE_DIR]
+#   COMPOSE_DIR: Optional path to a directory containing docker-compose.yml or
+#                docker-compose.dev.yml and optionally a .env file. Defaults
+#                to ${ROOT_DIR}/deploy if not provided.
 COMPOSE_DIR="${1:-${ROOT_DIR}/deploy}"
 COMPOSE_FILE="${COMPOSE_DIR}/docker-compose.yml"
 # Fallback to dev.yml if docker-compose.yml doesn't exist
@@ -129,7 +133,10 @@ ensure_plugin_installed() {
   fi
 
   log "Enabling plugin ${PLUGIN_ID}."
-  run_mmctl plugin enable "${PLUGIN_ID}" >/dev/null || run_mmctl plugin enable "${PLUGIN_ID}" >/dev/null
+  if ! run_mmctl plugin enable "${PLUGIN_ID}" >/dev/null; then
+    log "Failed to enable plugin ${PLUGIN_ID}. See Mattermost logs for details." >&2
+    exit 1
+  fi
 }
 
 ensure_oidc_realm() {

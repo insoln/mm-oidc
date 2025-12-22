@@ -111,7 +111,7 @@ Redirecting `/login` to `/plugins/com.mm.oidc/login` requires a front proxy that
 ### 3.1 Docker Compose
 
 1. **Import the service definition**
-   - Reuse the service block from [deploy/docker-compose.dev.yml](deploy/docker-compose.dev.yml#L55-L140) and adjust the `ports`, `MM_SITE_URL`, and hostname values to match your environment.
+   - Reuse the `mattermost-proxy` service block from [`deploy/docker-compose.dev.yml`](deploy/docker-compose.dev.yml) and adjust the `ports`, `MM_SITE_URL`, and hostname values to match your environment.
    - Mount the maintained config [deploy/mattermost-proxy/nginx.conf](deploy/mattermost-proxy/nginx.conf) via a bind mount or ConfigMap.
 2. **Wire the network**
    - Place the proxy and Mattermost containers on the same Docker network.

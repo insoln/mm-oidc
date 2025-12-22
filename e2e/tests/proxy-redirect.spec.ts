@@ -95,15 +95,15 @@ test.describe('NGINX Proxy OIDC Redirect', () => {
     expect([200, 401]).toContain(response.status());
   });
 
-  test('plugin health endpoint should be accessible without redirect', async ({ page, request }) => {
+  test('plugin health endpoint should be accessible without redirect', async ({ request }) => {
     // Access plugin health endpoint
     const response = await request.get(PROXY_BASE_URL + '/plugins/com.mm.oidc/health');
     
     // Should NOT redirect
     expect(response.status()).not.toBe(302);
     
-    // Should return success or plugin response
-    expect([200, 404]).toContain(response.status());
+    // Should return 200 (plugin endpoint working)
+    expect(response.status()).toBe(200);
   });
 
   test('static files should be accessible without redirect', async ({ page, request }) => {
@@ -138,15 +138,20 @@ test.describe('NGINX Proxy OIDC Redirect', () => {
     expect([400, 401, 403, 404, 405]).toContain(response.status());
   });
 
-  test('callback URL should not redirect', async ({ page, request }) => {
-    // Access callback URL (without valid code, but should not redirect)
+  test('callback URL should not redirect', async ({ request }) => {
+    // Access callback URL (without valid code, but should not redirect to OIDC login)
     const response = await request.get(PROXY_BASE_URL + '/plugins/com.mm.oidc/callback', {
       maxRedirects: 0,
       failOnStatusCode: false
     });
     
-    // Should NOT be a redirect loop
+    // Should NOT be a redirect to OIDC login (would cause loop)
     expect(response.status()).not.toBe(302);
+    // Verify it's not redirecting to an unexpected location if it does redirect
+    if (response.status() === 302) {
+      const location = response.headers()['location'] ?? '';
+      expect(location).not.toMatch(/\/plugins\/com\.mm\.oidc\/login/);
+    }
   });
 
   test('health check endpoint should be accessible', async ({ page, request }) => {

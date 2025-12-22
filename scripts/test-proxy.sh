@@ -41,21 +41,21 @@ run_test() {
   if output=$(eval "$test_cmd" 2>&1); then
     if echo "$output" | grep -Eq "$expected_pattern"; then
       echo -e "${GREEN}PASS${NC}"
-      ((++test_passed))
+      test_passed=$((test_passed + 1))
       return 0
     fi
 
     echo -e "${RED}FAIL${NC}"
     echo "  Expected pattern: ${expected_pattern}"
     echo "  Got: ${output}"
-    ((++test_failed))
+    test_failed=$((test_failed + 1))
     return 1
   fi
 
   echo -e "${RED}FAIL${NC}"
   echo "  Command failed: ${test_cmd}"
   echo "  Output: ${output}"
-  ((++test_failed))
+  test_failed=$((test_failed + 1))
   return 1
 }
 

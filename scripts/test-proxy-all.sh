@@ -29,7 +29,8 @@ if ! docker compose --env-file "${ENV_FILE}" -f "${COMPOSE_FILE}" ps | grep -q m
   exit 1
 fi
 
-if ! docker compose --env-file "${ENV_FILE}" -f "${COMPOSE_FILE}" ps | grep -q "Up"; then
+if ! docker compose --env-file "${ENV_FILE}" -f "${COMPOSE_FILE}" ps --format 'table {{.Status}}' \
+  | awk 'NR>1 && $1=="Up"{found=1} END{exit found?0:1}'; then
   echo "[test-proxy-all] One or more services are down. Check docker compose ps." >&2
   exit 1
 fi

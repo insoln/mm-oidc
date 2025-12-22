@@ -15,7 +15,7 @@ This guide describes how to launch an ephemeral Mattermost + Keycloak stack that
 ## Prerequisites
 
 - Docker 25+ with Compose V2 plugin.
-- Ports `8787` (Mattermost via proxy), `8065` (direct Mattermost debug access), and `8080` (Keycloak) free on your host.
+- Ports `8787` (primary Mattermost access via the NGINX proxy / Site URL), `8065` (Mattermost's internal HTTP port exposed for local/debug use only, not for normal browsing or OIDC redirects), and `8080` (Keycloak) free on your host.
 - Optional: GNU Make for the future `make dev-*` wrappers.
 
 ## First-Time Setup
