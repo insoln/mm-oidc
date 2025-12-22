@@ -19,23 +19,17 @@
 - Рекомендации по безопасности (HTTPS, rate limiting, security headers)
 - Альтернативные подходы (Kubernetes Ingress, API Gateway, Service Mesh)
 
-### 2. 🔧 Практическая реализация POC
+### 2. 🔧 Прокси как часть dev-стенда
 
-**Директория:** `deploy/proxy-poc/nginx/`
+Теперь прокси включен в основной compose-стек, поэтому дополнительных директорий не требуется.
 
-Полностью функциональный proof-of-concept на базе NGINX:
-
-#### Компоненты:
-- ✅ `nginx.conf` - конфигурация прокси с логикой редиректа
-- ✅ `docker-compose.yml` - полный стек (NGINX, Mattermost, Keycloak, PostgreSQL)
-- ✅ `.env.example` - шаблон переменных окружения
-- ✅ `start.sh` / `stop.sh` - управление стеком
-- ✅ `validate-config.sh` - валидация NGINX конфигурации
-- ✅ `test-curl.sh` - автоматизированные curl тесты
-- ✅ `test-all.sh` - запуск всех тестов
-- ✅ `README.md` - документация POC
-- ✅ `TESTING.md` - руководство по тестированию
-- ✅ `TEST_RESULTS.md` - результаты тестирования
+#### Ключевые артефакты:
+- ✅ `deploy/docker-compose.dev.yml` — добавляет сервис `mattermost-proxy`
+- ✅ `deploy/mattermost-proxy/nginx.conf` — конфигурация NGINX с логикой редиректа
+- ✅ `deploy/env/dev.env(.example)` — переменные окружения с `PROXY_HOSTNAME`, `PROXY_PORT`, `PROXY_BASE_URL`
+- ✅ `scripts/dev-up.sh` / `scripts/dev-down.sh` — запуск/остановка стека
+- ✅ `scripts/test-proxy.sh` — curl-харнесс для smoke-тестов
+- ✅ `scripts/test-proxy-all.sh` — curl + Playwright регрессия
 
 ### 3. 🧪 Comprehensive тестирование
 
@@ -89,27 +83,16 @@
 ### Быстрый старт
 
 ```bash
-# Перейти в директорию POC
-cd deploy/proxy-poc/nginx
-
-# Запустить полный стек
-./start.sh
-
-# Проверить работу
-curl -v http://proxy.127.0.0.1.nip.io:8787/
-# Должен вернуть 302 с Location: /plugins/com.mm.oidc/login
-
-# Запустить тесты
-./test-curl.sh
-
-# Остановить стек
-./stop.sh
+scripts/dev-up.sh
+scripts/test-proxy.sh            # curl smoke-тесты
+scripts/test-proxy-all.sh        # curl + Playwright
+scripts/dev-down.sh
 ```
 
 ### Доступы
 
 После запуска стека:
-- **Mattermost (через NGINX):** http://proxy.127.0.0.1.nip.io:8787
+- **Mattermost (через NGINX):** http://mattermost-proxy.127.0.0.1.nip.io:8787
 - **Keycloak (прямой доступ):** http://keycloak.127.0.0.1.nip.io:8080
 - **Учетные данные:**
   - Mattermost admin: `mm-admin / Password123!`
@@ -227,28 +210,24 @@ location / {
 ## Файлы и артефакты
 
 ### Документация
-- `docs/PROXY_OIDC_REDIRECT.md` - основная документация (русский)
-- `deploy/proxy-poc/nginx/README.md` - POC документация
-- `deploy/proxy-poc/nginx/TESTING.md` - руководство по тестированию
-- `deploy/proxy-poc/nginx/TEST_RESULTS.md` - результаты тестов
+- `docs/PROXY_OIDC_REDIRECT.md` — архитектура и сценарии
+- `docs/DEV_ENV.md` — инструкции по dev-стенду и тестам прокси
 
 ### Конфигурация
-- `deploy/proxy-poc/nginx/nginx.conf` - NGINX конфигурация ✅
-- `deploy/proxy-poc/nginx/docker-compose.yml` - Docker Compose стек
-- `deploy/proxy-poc/nginx/.env.example` - шаблон окружения
+- `deploy/mattermost-proxy/nginx.conf` — конфигурация NGINX ✅
+- `deploy/docker-compose.dev.yml` — единый Docker Compose стек
+- `deploy/env/dev.env(.example)` — настройки окружения
 
 ### Скрипты
-- `deploy/proxy-poc/nginx/start.sh` - запуск стека
-- `deploy/proxy-poc/nginx/stop.sh` - остановка стека
-- `deploy/proxy-poc/nginx/validate-config.sh` - валидация NGINX
-- `deploy/proxy-poc/nginx/test-curl.sh` - curl тесты
-- `deploy/proxy-poc/nginx/test-all.sh` - все тесты
+- `scripts/dev-up.sh` / `scripts/dev-down.sh` — подъем/остановка стека
+- `scripts/test-proxy.sh` — curl тесты
+- `scripts/test-proxy-all.sh` — curl + Playwright
 
 ### Тесты
 - `e2e/tests/proxy-redirect.spec.ts` - Playwright E2E тесты
 
 ### Обновления кодовой базы
-- `scripts/dev-bootstrap.sh` - поддержка proxy POC директории
+- `scripts/dev-bootstrap.sh` - автоматическая сборка плагина и настройка IdP/прокси
 
 ## Заключение
 

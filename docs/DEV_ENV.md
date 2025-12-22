@@ -9,12 +9,13 @@ This guide describes how to launch an ephemeral Mattermost + Keycloak stack that
 - Plugin bundles are sourced from `build/plugins/`. `scripts/dev-bootstrap.sh` now runs `make package` for you and ensures the resulting `mm-oidc.tar.gz` lives in that directory before pushing it into Mattermost.
 - Keycloak bootstrap (realm + client) is handled by `scripts/dev-bootstrap.sh` via `kcadm`, keeping the plugin configuration in sync with the generated client secret.
 - The stack defaults `KC_HOSTNAME` to `keycloak.127.0.0.1.nip.io`, a wildcard domain that resolves to `127.0.0.1` on your host while the compose network maps the same hostname back to the Keycloak container, so both browser traffic and in-cluster requests agree on a single issuer URL.
+- Mattermost traffic now flows through the bundled NGINX proxy exposed at `http://mattermost-proxy.127.0.0.1.nip.io:8787`, matching the site URL configured in Mattermost and the redirect targets used by the plugin.
 - Credentials, ports, and image tags are configured through `deploy/env/dev.env`.
 
 ## Prerequisites
 
 - Docker 25+ with Compose V2 plugin.
-- Ports `8065` (Mattermost) and `8080` (Keycloak) free on your host.
+- Ports `8787` (Mattermost via proxy), `8065` (direct Mattermost debug access), and `8080` (Keycloak) free on your host.
 - Optional: GNU Make for the future `make dev-*` wrappers.
 
 ## First-Time Setup
@@ -53,8 +54,8 @@ Without arguments the script tails every service. Pass one or more service names
 
 Once `scripts/dev-up.sh` installs the plugin you can exercise the end-to-end authentication flow without wiring any custom UI yet:
 
-1. Open Mattermost in your browser at `https://localhost:8065` and log out if necessary.
-2. Navigate to `https://localhost:8065/plugins/com.mm.oidc/` — the plugin now serves a minimal landing page with a **Start Login** button plus current issuer/redirect metadata.
+1. Open Mattermost in your browser at `http://mattermost-proxy.127.0.0.1.nip.io:8787` and log out if necessary.
+2. Navigate to `http://mattermost-proxy.127.0.0.1.nip.io:8787/plugins/com.mm.oidc/` — the plugin now serves a minimal landing page with a **Start Login** button plus current issuer/redirect metadata.
 3. Click **Start Login** to launch the Authorization Code + PKCE flow against the configured Keycloak realm. On success you will be redirected back to the Mattermost site URL with a valid `MMAUTHTOKEN` cookie, so the standard UI should show you as signed in as the provisioned user.
 
 This landing page lives entirely within the plugin backend so it remains available even before we ship the React webapp bundle. It is safe to expose in dev/test environments but you should still rely on the regular Mattermost UX for production deployments once the webapp is in place.
@@ -68,6 +69,22 @@ scripts/dev-down.sh
 ```
 
 Removes containers and orphans but keeps named volumes so database state persists between runs. Use `docker compose ... down -v` manually if you want a full reset.
+
+### Validate the proxy redirect rules
+
+Run the bundled curl harness after the stack is up:
+
+```bash
+scripts/test-proxy.sh
+```
+
+To add the Playwright regression (requires the dev stack to stay up), use:
+
+```bash
+scripts/test-proxy-all.sh
+```
+
+Both commands read `deploy/env/dev.env` so they always target the active hostname/port.
 
 ## Working With Plugin Bundles
 

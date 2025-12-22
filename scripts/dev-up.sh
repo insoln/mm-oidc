@@ -34,4 +34,4 @@ docker compose --env-file "${ENV_FILE}" -f "${COMPOSE_FILE}" up -d --wait "$@"
 
 "${ROOT_DIR}/scripts/dev-bootstrap.sh"
 
-echo "[dev-up] Services are starting. Access Mattermost at http://localhost:8065 and Keycloak at http://localhost:8080"
+echo "[dev-up] Services are starting. Access Mattermost via http://mattermost-proxy.127.0.0.1.nip.io:8787 and Keycloak at http://localhost:8080"

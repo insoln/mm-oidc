@@ -285,7 +285,7 @@ location /admin {
 
 ### POC 1: NGINX Reverse Proxy
 
-См. `deploy/proxy-poc/nginx/` для полной конфигурации.
+См. `deploy/mattermost-proxy/nginx.conf` и `deploy/docker-compose.dev.yml` для полной конфигурации.
 
 **Основные моменты**:
 
@@ -334,7 +334,7 @@ server {
 
 ### POC 2: Traefik Reverse Proxy
 
-См. `deploy/proxy-poc/traefik/` для полной конфигурации.
+Ниже приведен референс-конфиг для Traefik (для самостоятельной адаптации).
 
 **Основные моменты**:
 
@@ -364,58 +364,38 @@ services:
 
 ## Инструкции по развертыванию
 
-### Вариант 1: NGINX POC
+### Вариант 1: Встроенный NGINX (dev-стенд)
 
-1. **Перейдите в директорию POC**:
-   ```bash
-   cd deploy/proxy-poc/nginx
-   ```
+1. **Соберите и запустите стек**:
+    ```bash
+    scripts/dev-up.sh
+    ```
 
-2. **Настройте переменные окружения**:
-   ```bash
-   cp .env.example .env
-   # Отредактируйте .env при необходимости
-   ```
+2. **(Опционально) Запустите curl smoke-тесты**:
+    ```bash
+    scripts/test-proxy.sh
+    ```
 
-3. **Запустите стек**:
-   ```bash
-   docker compose up -d
-   ```
+3. **(Опционально) Добавьте Playwright регрессию**:
+    ```bash
+    scripts/test-proxy-all.sh
+    ```
 
-4. **Дождитесь готовности сервисов**:
-   ```bash
-   docker compose logs -f
-   ```
+4. **Откройте браузер** и перейдите на `http://mattermost-proxy.127.0.0.1.nip.io:8787`
 
-5. **Откройте браузер** и перейдите на `http://proxy.127.0.0.1.nip.io:8787` (или собственный nip.io-домен)
+5. **Проверьте редирект**:
+    - Без cookie должен быть редирект на `/plugins/com.mm.oidc/login`
+    - После успешной авторизации доступ к Mattermost
 
-6. **Проверьте редирект**:
-   - Без cookie должен быть редирект на `/plugins/com.mm.oidc/login`
-   - После успешной авторизации доступ к Mattermost
+### Вариант 2: Traefik (пример для самостоятельной адаптации)
 
-### Вариант 2: Traefik POC
+Реализация для Traefik не входит в репозиторий, но можно использовать приведённый выше snippet:
 
-1. **Перейдите в директорию POC**:
-   ```bash
-   cd deploy/proxy-poc/traefik
-   ```
-
-2. **Настройте переменные окружения**:
-   ```bash
-   cp .env.example .env
-   ```
-
-3. **Запустите стек**:
-   ```bash
-   docker compose up -d
-   ```
-
-4. **Откройте Traefik Dashboard**:
-   ```
-   http://localhost:8080
-   ```
-
-5. **Проверьте маршруты и middleware**
+1. Создайте собственный `docker-compose.yml`, добавив сервис `traefik` и применив middleware `redirectregex`.
+2. Пробросьте порт `80` (и при необходимости `8080` для dashboard).
+3. Смонтируйте Docker socket, чтобы Traefik мог обнаружить сервисы.
+4. Настройте правила `traefik.http.routers` для Mattermost и добавьте middleware, который редиректит на `/plugins/com.mm.oidc/login` при отсутствии cookie.
+5. Протестируйте сценарии аналогично NGINX-варианту.
 
 ## Тестирование
 
@@ -423,7 +403,7 @@ services:
 
 ```bash
 # Запрос без cookie
-curl -v http://proxy.127.0.0.1.nip.io:8787/ 2>&1 | grep -E "(Location|HTTP)"
+curl -v http://mattermost-proxy.127.0.0.1.nip.io:8787/ 2>&1 | grep -E "(Location|HTTP)"
 
 # Ожидается:
 # HTTP/1.1 302 Found
@@ -434,7 +414,7 @@ curl -v http://proxy.127.0.0.1.nip.io:8787/ 2>&1 | grep -E "(Location|HTTP)"
 
 ```bash
 # Получите валидную MMAUTHTOKEN через браузер после логина
-curl -v -H "Cookie: MMAUTHTOKEN=your_token_here" http://proxy.127.0.0.1.nip.io:8787/ 2>&1 | grep HTTP
+curl -v -H "Cookie: MMAUTHTOKEN=your_token_here" http://mattermost-proxy.127.0.0.1.nip.io:8787/ 2>&1 | grep HTTP
 
 # Ожидается:
 # HTTP/1.1 200 OK
@@ -443,7 +423,7 @@ curl -v -H "Cookie: MMAUTHTOKEN=your_token_here" http://proxy.127.0.0.1.nip.io:8
 ### Сценарий 3: API запросы не должны редиректиться
 
 ```bash
-curl -v http://proxy.127.0.0.1.nip.io:8787/api/v4/users/me 2>&1 | grep HTTP
+curl -v http://mattermost-proxy.127.0.0.1.nip.io:8787/api/v4/users/me 2>&1 | grep HTTP
 
 # Ожидается:
 # HTTP/1.1 401 Unauthorized (но не 302 редирект)
@@ -453,7 +433,7 @@ curl -v http://proxy.127.0.0.1.nip.io:8787/api/v4/users/me 2>&1 | grep HTTP
 
 ```bash
 curl -v -H "Upgrade: websocket" -H "Connection: upgrade" \
-    http://proxy.127.0.0.1.nip.io:8787/api/v4/websocket 2>&1 | grep HTTP
+    http://mattermost-proxy.127.0.0.1.nip.io:8787/api/v4/websocket 2>&1 | grep HTTP
 
 # Ожидается:
 # HTTP/1.1 101 Switching Protocols (или проксирование на backend)

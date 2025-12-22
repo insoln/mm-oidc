@@ -10,7 +10,7 @@ import { test, expect } from '@playwright/test';
  * 4. WebSocket connections work
  */
 
-const PROXY_BASE_URL = process.env.PROXY_BASE_URL || 'http://localhost';
+const PROXY_BASE_URL = process.env.PROXY_BASE_URL || 'http://mattermost-proxy.127.0.0.1.nip.io:8787';
 const KEYCLOAK_ADMIN_USER = process.env.KC_ADMIN || 'admin';
 const KEYCLOAK_ADMIN_PASSWORD = process.env.KC_ADMIN_PASSWORD || 'Keycloak123!';
 
@@ -20,27 +20,27 @@ test.describe('NGINX Proxy OIDC Redirect', () => {
     await page.context().clearCookies();
   });
 
-  test('should redirect unauthenticated user to OIDC login', async ({ page }) => {
-    // Navigate to root URL without auth cookie
-    const response = await page.goto(PROXY_BASE_URL + '/');
-    
-    // Should be redirected to OIDC login page
-    // Either we follow the redirect and land on the login page,
-    // or we check the redirect response
-    const finalUrl = page.url();
-    
-    expect(finalUrl).toMatch(/\/plugins\/com\.mm\.oidc\/login/);
+  test('should redirect unauthenticated user to OIDC login', async ({ request }) => {
+    const response = await request.get(PROXY_BASE_URL + '/', {
+      maxRedirects: 0,
+      failOnStatusCode: false,
+    });
+
+    expect(response.status()).toBe(302);
+    const location = response.headers()['location'] ?? '';
+    expect(location).toMatch(/\/plugins\/com\.mm\.oidc\/login/);
   });
 
-  test('should redirect with original URL as redirect_to parameter', async ({ page }) => {
-    // Navigate to a specific path
-    await page.goto(PROXY_BASE_URL + '/channels/town-square');
-    
-    // Should be redirected with the original URL
-    const finalUrl = page.url();
-    
-    expect(finalUrl).toMatch(/\/plugins\/com\.mm\.oidc\/login/);
-    expect(finalUrl).toMatch(/redirect_to=.*channels.*town-square/);
+  test('should redirect with original URL as redirect_to parameter', async ({ request }) => {
+    const response = await request.get(PROXY_BASE_URL + '/channels/town-square', {
+      maxRedirects: 0,
+      failOnStatusCode: false,
+    });
+
+    expect(response.status()).toBe(302);
+    const location = response.headers()['location'] ?? '';
+    expect(location).toMatch(/\/plugins\/com\.mm\.oidc\/login/);
+    expect(location).toMatch(/redirect_to=.*channels.*town-square/);
   });
 
   test('should allow access after successful OIDC login', async ({ page }) => {
@@ -171,17 +171,16 @@ test.describe('NGINX Proxy Security Headers', () => {
 });
 
 test.describe('NGINX Proxy Redirect Behavior', () => {
-  test('should preserve query parameters in redirect', async ({ page }) => {
-    // Navigate with query params
-    await page.goto(PROXY_BASE_URL + '/?param1=value1&param2=value2');
-    
-    const finalUrl = page.url();
-    
-    // Should redirect to OIDC login
-    expect(finalUrl).toMatch(/\/plugins\/com\.mm\.oidc\/login/);
-    
-    // Should preserve original URL with query params in redirect_to
-    expect(finalUrl).toMatch(/redirect_to=.*param1=value1/);
+  test('should preserve query parameters in redirect', async ({ request }) => {
+    const response = await request.get(PROXY_BASE_URL + '/?param1=value1&param2=value2', {
+      maxRedirects: 0,
+      failOnStatusCode: false,
+    });
+
+    expect(response.status()).toBe(302);
+    const location = response.headers()['location'] ?? '';
+    expect(location).toMatch(/\/plugins\/com\.mm\.oidc\/login/);
+    expect(location).toMatch(/redirect_to=.*param1=value1/);
   });
 
   test('should not redirect requests with Accept: application/json', async ({ page, request }) => {
