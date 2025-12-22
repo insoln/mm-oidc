@@ -2,9 +2,22 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-COMPOSE_FILE="${ROOT_DIR}/deploy/docker-compose.dev.yml"
-ENV_DIR="${ROOT_DIR}/deploy/env"
-ENV_FILE="${ENV_DIR}/dev.env"
+
+# Allow override of compose directory (for proxy POC)
+COMPOSE_DIR="${1:-${ROOT_DIR}/deploy}"
+COMPOSE_FILE="${COMPOSE_DIR}/docker-compose.yml"
+# Fallback to dev.yml if docker-compose.yml doesn't exist
+if [[ ! -f "${COMPOSE_FILE}" ]]; then
+  COMPOSE_FILE="${COMPOSE_DIR}/docker-compose.dev.yml"
+fi
+
+# Use .env from compose directory if it exists, otherwise use deploy/env
+if [[ -f "${COMPOSE_DIR}/.env" ]]; then
+  ENV_FILE="${COMPOSE_DIR}/.env"
+else
+  ENV_DIR="${ROOT_DIR}/deploy/env"
+  ENV_FILE="${ENV_DIR}/dev.env"
+fi
 PLUGINS_DIR="${ROOT_DIR}/build/plugins"
 PLUGIN_ID="com.mm.oidc"
 PLUGIN_ARCHIVE_NAME="mm-oidc.tar.gz"
