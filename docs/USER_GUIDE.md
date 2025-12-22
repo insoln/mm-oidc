@@ -161,6 +161,8 @@ The plugin supports authentication via the Mattermost Desktop application on Win
 
 No additional configuration is required on the plugin side. The desktop app automatically adds the `isMobile=true` parameter when initiating OAuth flows.
 
+If you front Mattermost with the bundled proxy (or copy its rules), desktop/mobile requests are also auto-detected via `User-Agent` and the proxy will append `isMobile=true` to `/plugins/com.mm.oidc/login` before handing control to the plugin. This keeps the experience consistent even when the client cannot inject query parameters on its own.
+
 ### Usage
 
 1. **Launch the Mattermost Desktop app**
