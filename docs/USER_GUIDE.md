@@ -203,6 +203,24 @@ The desktop app needs to add `?isMobile=true` to the login URL when initiating O
 - Try logging in via the web browser first to verify the plugin is working correctly
 - Check that your Mattermost server's `SiteURL` is configured correctly in System Console
 
+**Problem**: Plugin changes not taking effect / still seeing HTTP 302 redirects
+
+**Solutions**:
+- **Rebuild the plugin** after code changes:
+  ```bash
+  cd /path/to/mm-oidc
+  make server-build
+  make package  # creates plugin bundle
+  ```
+- **Redeploy to Mattermost**:
+  - Upload new plugin bundle via System Console → Plugin Management
+  - Or restart development stack: `make dev-down && make dev-up`
+- **Verify deployment**:
+  - Check plugin version in System Console matches your build
+  - Review Mattermost logs for `"handleLogin called"` messages
+  - Clear browser cache and test again
+- **Expected behavior**: When `isMobile=true` is present, should see HTTP 200 with HTML page (not HTTP 302 redirect)
+
 ### Security notes
 
 - **Browser-based authentication is more secure**: The desktop app opens OAuth in your system browser (not an embedded webview), which allows you to:
