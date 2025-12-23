@@ -349,7 +349,7 @@ func (p *Plugin) handleLogin(w http.ResponseWriter, r *http.Request) {
 
 	// Check if this is a mobile/desktop client login
 	isMobile := r.URL.Query().Get("isMobile") == "true"
-	
+
 	// Log the detection for debugging
 	p.API.LogInfo("handleLogin called", "isMobile", isMobile, "query_params", r.URL.Query().Encode(), "user_agent", r.Header.Get("User-Agent"))
 
@@ -395,14 +395,14 @@ func (p *Plugin) handleLogin(w http.ResponseWriter, r *http.Request) {
 	}
 
 	p.API.LogDebug("redirecting to OIDC provider", "state", state, "is_mobile", isMobile)
-	
+
 	// For mobile/desktop clients, render an HTML page that opens the OAuth URL in an external browser
 	// This prevents the OAuth flow from happening in an embedded webview
 	if isMobile {
 		p.renderExternalBrowserRedirect(w, authorizeURL)
 		return
 	}
-	
+
 	// For web clients, use a standard HTTP redirect
 	http.Redirect(w, r, authorizeURL, http.StatusFound)
 }
@@ -849,7 +849,7 @@ func (p *Plugin) createUserSession(user *model.User) (*model.Session, error) {
 // redirectToMobileComplete redirects to the /complete endpoint with session tokens for mobile/desktop clients.
 func (p *Plugin) redirectToMobileComplete(w http.ResponseWriter, r *http.Request, session *model.Session) {
 	cfg := p.getConfiguration()
-	
+
 	// Build the complete URL with tokens as query parameters
 	completeURL, err := url.Parse(cfg.RedirectURL)
 	if err != nil {
@@ -860,7 +860,7 @@ func (p *Plugin) redirectToMobileComplete(w http.ResponseWriter, r *http.Request
 
 	// Replace the path to point to our complete endpoint
 	completeURL.Path = fmt.Sprintf("/plugins/%s/complete", pluginID)
-	
+
 	q := completeURL.Query()
 	q.Set("MMAUTHTOKEN", session.Token)
 	q.Set("MMUSERID", session.UserId)
@@ -887,7 +887,7 @@ func (p *Plugin) handleMobileComplete(w http.ResponseWriter, r *http.Request) {
 
 	cfg := p.getConfiguration()
 	mmCfg := p.API.GetConfig()
-	
+
 	// Get the site URL for the mattermost:// redirect
 	siteURL := "/"
 	if mmCfg != nil && mmCfg.ServiceSettings.SiteURL != nil {
@@ -965,12 +965,13 @@ func extractHost(urlStr string) string {
 
 // renderExternalBrowserRedirect renders an HTML page that opens the OAuth URL in an external browser window.
 // This is used for mobile/desktop clients to ensure OAuth happens in the system browser, not an embedded webview.
+
 func (p *Plugin) renderExternalBrowserRedirect(w http.ResponseWriter, oauthURL string) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	
-	// Escape the URL for safe inclusion in HTML and JavaScript
+
+	// Escape for safe attribute inclusion; the DOM will normalize hrefs before JS reads them
 	escapedURL := htmlEscape(oauthURL)
-	
+
 	fmt.Fprintf(w, `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -987,11 +988,17 @@ func (p *Plugin) renderExternalBrowserRedirect(w http.ResponseWriter, oauthURL s
 		a.primary:hover { opacity: 0.9; }
 	</style>
 	<script>
+		function launchExternalBrowser() {
+			var link = document.getElementById('oauth-link');
+			if (!link || !link.href) {
+				return;
+			}
+			window.open(link.href, '_blank', 'noopener');
+		}
 		// Automatically try to open the OAuth URL in an external browser
 		// The desktop app should intercept this and open it in the system browser
 		window.onload = function() {
-			// Use window.open() which the desktop app can intercept and redirect to external browser
-			window.open('%s', '_blank');
+			launchExternalBrowser();
 			
 			// Show fallback link after a short delay
 			setTimeout(function() {
@@ -1002,6 +1009,7 @@ func (p *Plugin) renderExternalBrowserRedirect(w http.ResponseWriter, oauthURL s
 	</script>
 </head>
 <body>
+	<a id="oauth-link" href="%s" rel="noreferrer noopener" style="display:none;"></a>
 	<main class="card">
 		<h1>Opening Browser for Authentication</h1>
 		<div id="spinner" class="spinner"></div>
@@ -1009,7 +1017,7 @@ func (p *Plugin) renderExternalBrowserRedirect(w http.ResponseWriter, oauthURL s
 		<p style="font-size: 0.9rem; color: #cbd5e1;">Please complete the login in your browser, then return to this window.</p>
 		<div id="fallback" style="display: none;">
 			<p style="color: #f87171;">If the browser didn't open automatically:</p>
-			<a class="primary" href="%s" target="_blank">Click here to open browser</a>
+			<a class="primary" href="%s" target="_blank" rel="noreferrer noopener">Click here to open browser</a>
 		</div>
 	</main>
 </body>
