@@ -392,6 +392,15 @@ func (p *Plugin) handleLogin(w http.ResponseWriter, r *http.Request) {
 	}
 
 	p.API.LogDebug("redirecting to OIDC provider", "state", state, "is_mobile", isMobile)
+	
+	// For mobile/desktop clients, render an HTML page that opens the OAuth URL in an external browser
+	// This prevents the OAuth flow from happening in an embedded webview
+	if isMobile {
+		p.renderExternalBrowserRedirect(w, authorizeURL)
+		return
+	}
+	
+	// For web clients, use a standard HTTP redirect
 	http.Redirect(w, r, authorizeURL, http.StatusFound)
 }
 
@@ -949,4 +958,57 @@ func extractHost(urlStr string) string {
 		return parsed.Host
 	}
 	return "localhost"
+}
+
+// renderExternalBrowserRedirect renders an HTML page that opens the OAuth URL in an external browser window.
+// This is used for mobile/desktop clients to ensure OAuth happens in the system browser, not an embedded webview.
+func (p *Plugin) renderExternalBrowserRedirect(w http.ResponseWriter, oauthURL string) {
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	
+	// Escape the URL for safe inclusion in HTML and JavaScript
+	escapedURL := htmlEscape(oauthURL)
+	
+	fmt.Fprintf(w, `<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="utf-8" />
+	<title>Opening External Browser</title>
+	<style>
+		body { font-family: -apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif; margin: 0; padding: 2rem; background: #0f172a; color: #f1f5f9; }
+		.card { max-width: 640px; margin: 0 auto; background: rgba(15,23,42,0.85); border-radius: 16px; padding: 2rem; box-shadow: 0 15px 60px rgba(15,23,42,0.4); text-align: center; }
+		h1 { margin-top: 0; font-size: 1.8rem; }
+		p { line-height: 1.5; }
+		.spinner { border: 4px solid rgba(56,189,248,0.2); border-top: 4px solid #38bdf8; border-radius: 50%%; width: 40px; height: 40px; animation: spin 1s linear infinite; margin: 2rem auto; }
+		@keyframes spin { 0%% { transform: rotate(0deg); } 100%% { transform: rotate(360deg); } }
+		a.primary { display: inline-block; padding: 0.85rem 1.6rem; border-radius: 999px; font-weight: 600; background: #38bdf8; color: #0f172a; text-decoration: none; margin-top: 1.5rem; }
+		a.primary:hover { opacity: 0.9; }
+	</style>
+	<script>
+		// Automatically try to open the OAuth URL in an external browser
+		// The desktop app should intercept this and open it in the system browser
+		window.onload = function() {
+			// Use window.open() which the desktop app can intercept and redirect to external browser
+			var newWindow = window.open('%s', '_blank');
+			
+			// Show fallback link after a short delay
+			setTimeout(function() {
+				document.getElementById('fallback').style.display = 'block';
+				document.getElementById('spinner').style.display = 'none';
+			}, 2000);
+		};
+	</script>
+</head>
+<body>
+	<main class="card">
+		<h1>Opening Browser for Authentication</h1>
+		<div id="spinner" class="spinner"></div>
+		<p>Opening your system browser to complete authentication...</p>
+		<p style="font-size: 0.9rem; color: #cbd5e1;">Please complete the login in your browser, then return to this window.</p>
+		<div id="fallback" style="display: none;">
+			<p style="color: #f87171;">If the browser didn't open automatically:</p>
+			<a class="primary" href="%s" target="_blank">Click here to open browser</a>
+		</div>
+	</main>
+</body>
+</html>`, escapedURL, escapedURL)
 }

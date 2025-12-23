@@ -152,16 +152,21 @@ The plugin supports authentication via the Mattermost Desktop application on Win
 
 ### How it works
 
-1. **Desktop app initiates login**: When you click "Sign in with SSO" or similar in the desktop app, it opens the plugin's login URL in your default browser with a special `isMobile=true` parameter.
-2. **Browser authentication**: You complete the OIDC authentication flow in your browser (which may use saved passwords, security keys, etc.).
-3. **Protocol handler redirect**: After successful authentication, the browser redirects to a `mattermost://` URL that the desktop app is registered to handle.
-4. **Session handoff**: The desktop app receives the authentication tokens and establishes your session.
+1. **Desktop app initiates login**: When you click "Sign in with SSO" or similar in the desktop app, it navigates to the plugin's login URL.
+2. **Detection and external browser**: The plugin detects desktop/mobile clients (via the `isMobile=true` query parameter, which can be added by the client or by a proxy inspecting the User-Agent). For desktop clients, instead of a simple HTTP redirect, the plugin serves an HTML page that opens the OAuth provider (Keycloak) in your system's external browser using JavaScript `window.open()`.
+3. **Browser authentication**: You complete the OIDC authentication flow in your external browser (which allows using saved passwords, password managers, security keys, etc.).
+4. **Protocol handler redirect**: After successful authentication, the browser redirects to a `mattermost://` URL that the desktop app is registered to handle.
+5. **Session handoff**: The desktop app receives the authentication tokens and establishes your session.
 
 ### Configuration
 
-No additional configuration is required on the plugin side. The desktop app automatically adds the `isMobile=true` parameter when initiating OAuth flows.
+The plugin automatically detects desktop/mobile clients when the `isMobile=true` query parameter is present in the login URL.
 
-If you front Mattermost with the bundled proxy (or copy its rules), desktop/mobile requests are also auto-detected via `User-Agent` and the proxy will append `isMobile=true` to `/plugins/com.mm.oidc/login` before handing control to the plugin. This keeps the experience consistent even when the client cannot inject query parameters on its own.
+**Option 1: Using the bundled proxy (Recommended)**  
+If you front Mattermost with the bundled nginx proxy (or copy its rules), desktop/mobile requests are automatically detected via `User-Agent` header, and the proxy appends `isMobile=true` to `/plugins/com.mm.oidc/login` before forwarding to the plugin. This ensures OAuth opens in external browser without client-side changes.
+
+**Option 2: Without proxy**  
+The desktop app needs to add `?isMobile=true` to the login URL when initiating OAuth flows. Contact your desktop app administrator or configure your deployment to append this parameter for Mattermost desktop clients.
 
 ### Usage
 
