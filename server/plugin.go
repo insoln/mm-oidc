@@ -8,6 +8,7 @@ import (
 	"html/template"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -697,6 +698,43 @@ func issueSessionCookies(w http.ResponseWriter, r *http.Request, session *model.
 	return nil
 }
 
+func (p *Plugin) finalizeDesktopLogin(w http.ResponseWriter, r *http.Request, token, userID, csrfToken, expiresParam string) error {
+	if strings.TrimSpace(token) == "" || strings.TrimSpace(userID) == "" {
+		http.Error(w, "Missing authentication parameters", http.StatusBadRequest)
+		return fmt.Errorf("missing authentication parameters")
+	}
+
+	var expiresAt int64
+	if strings.TrimSpace(expiresParam) != "" {
+		parsed, err := strconv.ParseInt(expiresParam, 10, 64)
+		if err != nil {
+			p.API.LogWarn("invalid expiry parameter in desktop completion", "value", expiresParam)
+		} else {
+			expiresAt = parsed
+		}
+	}
+
+	session := &model.Session{
+		UserId:    userID,
+		Token:     token,
+		ExpiresAt: expiresAt,
+	}
+
+	if strings.TrimSpace(csrfToken) != "" {
+		session.AddProp("csrf", csrfToken)
+	}
+
+	cfg := p.getConfiguration()
+	if err := issueSessionCookies(w, r, session, csrfToken, cfg); err != nil {
+		http.Error(w, "Unable to finalize desktop login", http.StatusInternalServerError)
+		return fmt.Errorf("issue session cookies: %w", err)
+	}
+
+	redirectTarget := postLoginRedirect(cfg, p.API.GetConfig())
+	http.Redirect(w, r, redirectTarget, http.StatusFound)
+	return nil
+}
+
 func sessionCookieLifetime(session *model.Session) (time.Time, int) {
 	if session == nil || session.ExpiresAt == 0 {
 		return time.Time{}, 0
@@ -836,6 +874,7 @@ func (p *Plugin) createUserSession(user *model.User) (*model.Session, error) {
 		session.Roles = model.SystemUserRoleId
 	}
 	session.PreSave()
+	session.GenerateCSRF()
 	session.Id = ""
 
 	created, appErr := p.API.CreateSession(session)
@@ -864,6 +903,12 @@ func (p *Plugin) redirectToMobileComplete(w http.ResponseWriter, r *http.Request
 	q := completeURL.Query()
 	q.Set("MMAUTHTOKEN", session.Token)
 	q.Set("MMUSERID", session.UserId)
+	if csrf := strings.TrimSpace(session.GetCSRF()); csrf != "" {
+		q.Set("MMCSRF", csrf)
+	}
+	if session != nil && session.ExpiresAt > 0 {
+		q.Set("MMEXPIRES", strconv.FormatInt(session.ExpiresAt, 10))
+	}
 	completeURL.RawQuery = q.Encode()
 
 	http.Redirect(w, r, completeURL.String(), http.StatusFound)
@@ -879,9 +924,19 @@ func (p *Plugin) handleMobileComplete(w http.ResponseWriter, r *http.Request) {
 
 	authToken := r.URL.Query().Get("MMAUTHTOKEN")
 	userID := r.URL.Query().Get("MMUSERID")
+	csrfToken := r.URL.Query().Get("MMCSRF")
+	expiresParam := r.URL.Query().Get("MMEXPIRES")
+	isDesktopCallback := r.URL.Query().Get("desktop") == "1"
 
 	if authToken == "" || userID == "" {
 		http.Error(w, "Missing authentication parameters", http.StatusBadRequest)
+		return
+	}
+
+	if isDesktopCallback {
+		if err := p.finalizeDesktopLogin(w, r, authToken, userID, csrfToken, expiresParam); err != nil {
+			p.API.LogError("desktop login handoff failed", "error", err.Error())
+		}
 		return
 	}
 
@@ -904,8 +959,32 @@ func (p *Plugin) handleMobileComplete(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Build the mattermost:// URL for the desktop app
-	mattermostURL := fmt.Sprintf("mattermost://%s/chat/login/desktop?MMAUTHTOKEN=%s&MMUSERID=%s",
-		extractHost(siteURL), url.QueryEscape(authToken), url.QueryEscape(userID))
+	params := url.Values{}
+	params.Set("MMAUTHTOKEN", authToken)
+	params.Set("MMUSERID", userID)
+	if csrfToken != "" {
+		params.Set("MMCSRF", csrfToken)
+	}
+	if expiresParam != "" {
+		params.Set("MMEXPIRES", expiresParam)
+	}
+	params.Set("desktop", "1")
+	mattermostURL := fmt.Sprintf("mattermost://%s/plugins/%s/complete?%s",
+		extractHost(siteURL), pluginID, params.Encode())
+
+	telemetry := map[string]string{
+		"site":       extractHost(siteURL),
+		"has_csrf":   strconv.FormatBool(csrfToken != ""),
+		"has_expiry": strconv.FormatBool(expiresParam != ""),
+	}
+	telemetryJSON, _ := json.Marshal(telemetry)
+
+	expiresDisplay := "session-wide"
+	if expiresParam != "" {
+		if parsedExpires, err := strconv.ParseInt(expiresParam, 10, 64); err == nil && parsedExpires > 0 {
+			expiresDisplay = time.UnixMilli(parsedExpires).UTC().Format(time.RFC3339)
+		}
+	}
 
 	// Render an HTML page that will trigger the desktop app redirect
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
@@ -942,13 +1021,15 @@ func (p *Plugin) handleMobileComplete(w http.ResponseWriter, r *http.Request) {
 		<h1>Redirecting to Mattermost</h1>
 		<div id="spinner" class="spinner"></div>
 		<p>Opening the Mattermost desktop app...</p>
+			<p class="meta">Session handoff window expires: <strong>%s</strong></p>
+			<p class="meta" style="word-break: break-all; font-size: 0.65rem; color: #94a3b8;">Diagnostics: %s</p>
 		<div id="manual-link" class="actions" style="display: none;">
 			<p>If the app didn't open automatically:</p>
 			<a class="primary" href="%s">Click here to open Mattermost</a>
 		</div>
 	</main>
 </body>
-</html>`, mattermostURL, mattermostURL)
+</html>`, expiresDisplay, htmlEscape(string(telemetryJSON)), mattermostURL, mattermostURL)
 }
 
 // extractHost extracts the host from a URL string for use in mattermost:// protocol.
