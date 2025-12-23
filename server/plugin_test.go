@@ -280,8 +280,8 @@ func TestHandleMobileCompleteTrailingSlash(t *testing.T) {
 	router := p.getRouter()
 
 	cases := []struct {
-		name   string
-		path   string
+		name string
+		path string
 	}{
 		{name: "without slash", path: "/complete?desktop=1"},
 		{name: "with slash", path: "/complete/?desktop=1"},
