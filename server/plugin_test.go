@@ -275,6 +275,30 @@ func TestExtractHost(t *testing.T) {
 	}
 }
 
+func TestHandleMobileCompleteTrailingSlash(t *testing.T) {
+	p := &Plugin{}
+	router := p.getRouter()
+
+	cases := []struct {
+		name   string
+		path   string
+	}{
+		{name: "without slash", path: "/complete?desktop=1"},
+		{name: "with slash", path: "/complete/?desktop=1"},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodGet, "http://example.com"+tc.path, nil)
+			rec := httptest.NewRecorder()
+			router.ServeHTTP(rec, req)
+			if rec.Code != http.StatusBadRequest {
+				t.Fatalf("expected mobile complete handler for %s, got status %d", tc.path, rec.Code)
+			}
+		})
+	}
+}
+
 func TestAuthSessionMobile(t *testing.T) {
 	t.Run("stores mobile flag", func(t *testing.T) {
 		session := &authSession{

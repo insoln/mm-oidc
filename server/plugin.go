@@ -154,6 +154,7 @@ func (p *Plugin) getRouter() http.Handler {
 		mux.HandleFunc("/login", p.handleLogin)
 		mux.HandleFunc("/callback", p.handleCallback)
 		mux.HandleFunc("/complete", p.handleMobileComplete)
+		mux.HandleFunc("/complete/", p.handleMobileComplete)
 		mux.HandleFunc("/logout", p.handleLogout)
 		p.router = mux
 	}
