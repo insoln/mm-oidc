@@ -988,7 +988,7 @@ func (p *Plugin) renderExternalBrowserRedirect(w http.ResponseWriter, oauthURL s
 		// The desktop app should intercept this and open it in the system browser
 		window.onload = function() {
 			// Use window.open() which the desktop app can intercept and redirect to external browser
-			var newWindow = window.open('%s', '_blank');
+			window.open('%s', '_blank');
 			
 			// Show fallback link after a short delay
 			setTimeout(function() {
