@@ -349,6 +349,9 @@ func (p *Plugin) handleLogin(w http.ResponseWriter, r *http.Request) {
 
 	// Check if this is a mobile/desktop client login
 	isMobile := r.URL.Query().Get("isMobile") == "true"
+	
+	// Log the detection for debugging
+	p.API.LogInfo("handleLogin called", "isMobile", isMobile, "query_params", r.URL.Query().Encode(), "user_agent", r.Header.Get("User-Agent"))
 
 	state, err := generateRandomString(stateBytes)
 	if err != nil {
