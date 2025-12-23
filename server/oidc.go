@@ -42,6 +42,7 @@ type authSession struct {
 	CodeVerifier string `json:"code_verifier"`
 	CreatedAt    int64  `json:"created_at"`
 	IsMobile     bool   `json:"is_mobile"`
+	RedirectTo   string `json:"redirect_to,omitempty"`
 }
 
 func (s *authSession) isExpired(now time.Time) bool {

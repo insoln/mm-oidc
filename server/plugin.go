@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -18,7 +19,10 @@ import (
 	"github.com/mattermost/mattermost/server/public/plugin"
 )
 
-const httpClientTimeout = 10 * time.Second
+const (
+	httpClientTimeout  = 10 * time.Second
+	redirectHintCookie = "MMOIDC_REDIRECT"
+)
 
 // Plugin wires the Mattermost lifecycle hooks to the OIDC-specific implementation.
 type Plugin struct {
@@ -218,37 +222,211 @@ func (p *Plugin) handleLanding(w http.ResponseWriter, r *http.Request) {
 	<meta charset="utf-8" />
 	<title>Mattermost OIDC Bridge</title>
 	<style>
-		body { font-family: -apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif; margin: 0; padding: 2rem; background: #0f172a; color: #f1f5f9; }
-		.card { max-width: 640px; margin: 0 auto; background: rgba(15,23,42,0.85); border-radius: 16px; padding: 2rem; box-shadow: 0 15px 60px rgba(15,23,42,0.4); }
-		h1 { margin-top: 0; font-size: 1.8rem; }
+		:root { font-family: -apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif; }
+		body { margin: 0; padding: 2rem; background: #0f172a; color: #f1f5f9; }
+		.card { max-width: 720px; margin: 0 auto; background: rgba(15,23,42,0.85); border-radius: 18px; padding: 2.25rem; box-shadow: 0 15px 60px rgba(15,23,42,0.4); }
+		h1 { margin-top: 0; font-size: 1.9rem; }
+		h2 { margin: 0; font-size: 1.4rem; }
 		p { line-height: 1.5; }
-		.meta { font-size: 0.9rem; color: #cbd5f5; margin-top: 1.5rem; }
+		.meta { font-size: 0.95rem; color: #cbd5f5; margin-top: 1.5rem; }
+		.meta strong { display: inline-block; min-width: 120px; }
 		.actions { margin-top: 1.5rem; display: flex; gap: 0.75rem; flex-wrap: wrap; }
-		.primary, .secondary { border: none; border-radius: 999px; padding: 0.85rem 1.6rem; font-weight: 600; cursor: pointer; }
-		.primary { background: #38bdf8; color: #0f172a; box-shadow: 0 10px 25px rgba(56,189,248,0.35); }
-		.primary:hover { transform: translateY(-1px); box-shadow: 0 16px 30px rgba(56,189,248,0.4); }
+		.primary, .secondary { border: none; border-radius: 999px; padding: 0.9rem 1.8rem; font-weight: 600; cursor: pointer; transition: transform 120ms ease, box-shadow 120ms ease; }
+		.primary { background: #38bdf8; color: #0f172a; box-shadow: 0 12px 30px rgba(56,189,248,0.35); }
+		.primary:hover { transform: translateY(-1px); box-shadow: 0 18px 35px rgba(56,189,248,0.4); }
 		.secondary { background: transparent; color: #f1f5f9; border: 1px solid rgba(241,245,249,0.3); }
 		.secondary:hover { transform: translateY(-1px); }
 		.notice { margin-top: 1rem; padding: 0.85rem 1rem; border-left: 3px solid rgba(56,189,248,0.6); background: rgba(15,23,42,0.6); border-radius: 12px; color: #cbd5f5; }
-		.badge { display: inline-flex; align-items: center; padding: 0.2rem 0.8rem; border-radius: 999px; font-size: 0.85rem; font-weight: 600; }
+		.badge { display: inline-flex; align-items: center; padding: 0.25rem 0.85rem; border-radius: 999px; font-size: 0.85rem; font-weight: 600; }
 		.badge[data-variant='ready'] { background: rgba(34,197,94,0.2); color: #4ade80; }
 		.badge[data-variant='error'] { background: rgba(248,113,113,0.2); color: #f87171; }
+		.diag-section { margin-top: 2rem; padding: 2rem; border-radius: 20px; background: rgba(15,23,42,0.75); border: 1px solid rgba(148,163,184,0.25); display: flex; flex-direction: column; gap: 1.2rem; }
+		.diag-header { display: flex; flex-wrap: wrap; gap: 1rem; justify-content: space-between; }
+		.diag-actions { display: flex; flex-wrap: wrap; gap: 0.75rem; }
+		.diag-button { border: 1px solid rgba(241,245,249,0.4); background: transparent; color: #f1f5f9; border-radius: 12px; padding: 0.65rem 1.1rem; font-weight: 600; cursor: pointer; transition: border-color 120ms ease, transform 120ms ease; }
+		.diag-button:hover { border-color: #38bdf8; transform: translateY(-1px); }
+		.diag-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 0.85rem; }
+		.diag-item { background: rgba(15,23,42,0.6); border-radius: 14px; border: 1px solid rgba(148,163,184,0.2); padding: 0.9rem; }
+		.diag-label { font-size: 0.75rem; letter-spacing: 0.08em; color: #94a3b8; text-transform: uppercase; }
+		.diag-value { margin-top: 0.35rem; word-break: break-word; font-size: 0.95rem; }
+		.diag-pre { background: rgba(2,6,23,0.9); border-radius: 14px; padding: 1rem; border: 1px solid rgba(148,163,184,0.2); max-height: 360px; overflow: auto; font-size: 0.85rem; }
+		.kicker { letter-spacing: 0.2em; text-transform: uppercase; font-size: 0.75rem; color: #cbd5f5; margin: 0; }
+		@media (max-width: 600px) {
+			.primary, .secondary { width: 100%%; text-align: center; }
+			.diag-actions { width: 100%%; }
+			.diag-button { flex: 1 1 100%%; text-align: center; }
+		}
 	</style>
 </head>
 <body>
 	<main class="card">
 		<h1>Mattermost OIDC Bridge</h1>
-		<p>%s</p>
-		%s
+		<p>%[1]s</p>
+		%[2]s
 		<div class="meta">
-			<div><strong>Status:</strong> <span class="badge" data-variant="%s">%s</span></div>
-			<div><strong>Issuer:</strong> %s</div>
-			<div><strong>Redirect URL:</strong> %s</div>
-			<div><strong>Plugin ID:</strong> %s</div>
+			<div><strong>Status:</strong> <span class="badge" data-variant="%[3]s">%[4]s</span></div>
+			<div><strong>Issuer:</strong> %[5]s</div>
+			<div><strong>Redirect URL:</strong> %[6]s</div>
+			<div><strong>Plugin ID:</strong> %[7]s</div>
 		</div>
+		<section class="diag-section" aria-live="polite">
+			<div class="diag-header">
+				<div>
+					<p class="kicker">Deep diagnostics</p>
+					<h2>Login context snapshot</h2>
+					<p>Use this snapshot when the desktop app lands here instead of the Mattermost content you expected.</p>
+				</div>
+				<div class="diag-actions">
+					<button id="diag-refresh" class="diag-button" type="button">Refresh snapshot</button>
+					<button id="diag-copy" class="diag-button" type="button">Copy JSON</button>
+				</div>
+			</div>
+			<div id="diag-summary" class="diag-grid"></div>
+			<pre id="diag-json" class="diag-pre">Collecting…</pre>
+		</section>
 	</main>
-</body>
-</html>`, statusCopy, ctaMarkup, statusVariant, statusLabel, issuer, redirect, htmlEscape(pluginID))
+	<script>
+	(function() {
+		const diagJson = document.getElementById('diag-json');
+		const diagSummary = document.getElementById('diag-summary');
+		const refreshBtn = document.getElementById('diag-refresh');
+		const copyBtn = document.getElementById('diag-copy');
+		const cookieHintName = 'MMOIDC_REDIRECT';
+		const pluginReady = %[8]t;
+		const statusVariant = '%[3]s';
+		const pluginId = '%[7]s';
+		const issuer = '%[5]s';
+		const redirectURL = '%[6]s';
+
+		function parseCookies() {
+			return document.cookie
+				.split(';')
+				.map((chunk) => chunk.trim())
+				.filter(Boolean)
+				.map((entry) => entry.split('=')[0]);
+		}
+
+		function collectDiagnostics() {
+			const snapshot = {
+				generated_at: new Date().toISOString(),
+				plugin_ready: pluginReady,
+				status_variant: statusVariant,
+				plugin_id: pluginId,
+				issuer_url: issuer,
+				redirect_url: redirectURL,
+			};
+
+			if (typeof window !== 'undefined') {
+				snapshot.location_href = window.location?.href ?? '';
+				snapshot.location_pathname = window.location?.pathname ?? '';
+				snapshot.location_search = window.location?.search ?? '';
+				snapshot.location_hash = window.location?.hash ?? '';
+				snapshot.location_origin = window.location?.origin ?? '';
+				snapshot.query_params = window.location?.search ? Object.fromEntries(new URLSearchParams(window.location.search)) : {};
+				snapshot.navigator_user_agent = window.navigator?.userAgent ?? '';
+				snapshot.navigator_language = window.navigator?.language ?? '';
+				snapshot.navigator_online = window.navigator?.onLine ?? false;
+				snapshot.navigator_platform = window.navigator?.platform ?? '';
+				snapshot.hardware_concurrency = window.navigator?.hardwareConcurrency;
+				if (window.navigator && 'deviceMemory' in window.navigator) {
+					snapshot.device_memory_gb = window.navigator.deviceMemory;
+				}
+				snapshot.viewport = {
+					inner_width: window.innerWidth,
+					inner_height: window.innerHeight,
+					outer_width: window.outerWidth,
+					outer_height: window.outerHeight,
+				};
+				snapshot.screen = window.screen ? { width: window.screen.width, height: window.screen.height, pixel_ratio: window.devicePixelRatio ?? 1 } : null;
+				if (typeof Intl !== 'undefined' && Intl.DateTimeFormat) {
+					snapshot.timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+				}
+				try {
+					snapshot.local_storage_keys = window.localStorage ? Object.keys(window.localStorage) : [];
+				} catch (error) {
+					snapshot.local_storage_error = error?.message ?? 'unavailable';
+				}
+				try {
+					snapshot.session_storage_keys = window.sessionStorage ? Object.keys(window.sessionStorage) : [];
+				} catch (error) {
+					snapshot.session_storage_error = error?.message ?? 'unavailable';
+				}
+			}
+
+			if (typeof document !== 'undefined') {
+				snapshot.document_referrer = document.referrer ?? '';
+				snapshot.visibility_state = document.visibilityState ?? '';
+				snapshot.document_has_focus = document.hasFocus ? document.hasFocus() : undefined;
+				const cookieNames = parseCookies();
+				snapshot.cookie_names = cookieNames;
+				snapshot.cookie_contains_redirect_hint = cookieNames.includes(cookieHintName);
+			}
+
+			return snapshot;
+		}
+
+		function renderSummary(snapshot) {
+			if (!diagSummary) {
+				return;
+			}
+			const params = snapshot.query_params ?? {};
+			const cookieNames = Array.isArray(snapshot.cookie_names) ? snapshot.cookie_names : [];
+			const rows = [
+				{ label: 'Snapshot generated', value: snapshot.generated_at || '—' },
+				{ label: 'Current location', value: snapshot.location_href || '—' },
+				{ label: 'Redirect query param', value: params.redirect_to || '—' },
+				{ label: 'isMobile flag', value: params.isMobile || '—' },
+				{ label: 'Redirect hint cookie', value: snapshot.cookie_contains_redirect_hint ? 'present' : 'missing' },
+				{ label: 'Cookies detected', value: cookieNames.length ? cookieNames.join(', ') : 'None' },
+				{ label: 'Document referrer', value: snapshot.document_referrer || 'None' },
+				{ label: 'User agent', value: snapshot.navigator_user_agent || '—' },
+			];
+			diagSummary.innerHTML = rows
+				.map((row) => '<div class="diag-item"><div class="diag-label">' + row.label + '</div><div class="diag-value">' + (row.value || '—') + '</div></div>')
+				.join('');
+		}
+
+		function refreshSnapshot() {
+			const snapshot = collectDiagnostics();
+			if (diagJson) {
+				diagJson.textContent = JSON.stringify(snapshot, null, 2);
+			}
+			renderSummary(snapshot);
+		}
+
+		function copyDiagnostics() {
+			if (!diagJson) {
+				return;
+			}
+			const text = diagJson.textContent || '';
+			if (!text) {
+				return;
+			}
+			const fallbackCopy = () => {
+				const textarea = document.createElement('textarea');
+				textarea.value = text;
+				textarea.setAttribute('readonly', '');
+				textarea.style.position = 'absolute';
+				textarea.style.left = '-9999px';
+				document.body.appendChild(textarea);
+				textarea.select();
+				try { document.execCommand('copy'); } catch (_) {}
+				document.body.removeChild(textarea);
+			};
+			if (navigator?.clipboard?.writeText) {
+				navigator.clipboard.writeText(text).catch(fallbackCopy);
+				return;
+			}
+			fallbackCopy();
+		}
+
+		refreshBtn?.addEventListener('click', refreshSnapshot);
+		copyBtn?.addEventListener('click', copyDiagnostics);
+		refreshSnapshot();
+	})();
+	</script>
+	</body>
+</html>`, statusCopy, ctaMarkup, statusVariant, statusLabel, issuer, redirect, htmlEscape(pluginID), ready)
 }
 
 func (p *Plugin) writeFriendlyError(w http.ResponseWriter, status int, title, message string) {
@@ -350,9 +528,19 @@ func (p *Plugin) handleLogin(w http.ResponseWriter, r *http.Request) {
 
 	// Check if this is a mobile/desktop client login
 	isMobile := r.URL.Query().Get("isMobile") == "true"
+	redirectTo := sanitizeRedirectTarget(r.URL.Query().Get("redirect_to"))
+	referer := strings.TrimSpace(r.Referer())
+	if resolved := fallbackRedirectFromCookie(w, r, redirectTo); resolved != redirectTo {
+		p.API.LogDebug("redirect_to cookie fallback applied", "original", redirectTo, "resolved", resolved)
+		redirectTo = resolved
+	}
+	if resolved := fallbackRedirectFromReferer(r, redirectTo); resolved != redirectTo {
+		p.API.LogDebug("redirect_to referer fallback applied", "original", redirectTo, "resolved", resolved, "referer", referer)
+		redirectTo = resolved
+	}
 
 	// Log the detection for debugging
-	p.API.LogInfo("handleLogin called", "isMobile", isMobile, "query_params", r.URL.Query().Encode(), "user_agent", r.Header.Get("User-Agent"))
+	p.API.LogInfo("handleLogin called", "isMobile", isMobile, "query_params", r.URL.Query().Encode(), "user_agent", r.Header.Get("User-Agent"), "referer", referer)
 
 	state, err := generateRandomString(stateBytes)
 	if err != nil {
@@ -388,6 +576,7 @@ func (p *Plugin) handleLogin(w http.ResponseWriter, r *http.Request) {
 		CodeVerifier: codeVerifier,
 		CreatedAt:    time.Now().Unix(),
 		IsMobile:     isMobile,
+		RedirectTo:   redirectTo,
 	}
 	if err := p.saveAuthSession(state, session); err != nil {
 		p.API.LogError("failed to persist auth session", "error", err.Error())
@@ -480,11 +669,11 @@ func (p *Plugin) handleCallback(w http.ResponseWriter, r *http.Request) {
 		}
 
 		p.API.LogDebug("authentication successful for mobile", "sub", profile.Subject, "user_id", user.Id)
-		p.redirectToMobileComplete(w, r, createdSession)
+		p.redirectToMobileComplete(w, r, createdSession, session.RedirectTo)
 		return
 	}
 
-	createdSession, err := p.completeLogin(w, r, user, cfg)
+	createdSession, err := p.completeLogin(w, r, user, cfg, session.RedirectTo)
 	if err != nil {
 		p.API.LogError("failed to complete login", "state", state, "error", err.Error())
 		p.writeFriendlyError(w, http.StatusInternalServerError, "Unable to finish signing you in", "We couldn't establish a Mattermost session. Please try again.")
@@ -604,7 +793,7 @@ func flattenResourceAccess(access map[string]clientRoleMapping) map[string][]str
 	return result
 }
 
-func (p *Plugin) completeLogin(w http.ResponseWriter, r *http.Request, user *model.User, cfg *Configuration) (*model.Session, error) {
+func (p *Plugin) completeLogin(w http.ResponseWriter, r *http.Request, user *model.User, cfg *Configuration, redirectTo string) (*model.Session, error) {
 	session := &model.Session{UserId: user.Id, Roles: strings.TrimSpace(user.Roles)}
 	if session.Roles == "" {
 		session.Roles = model.SystemUserRoleId
@@ -626,8 +815,10 @@ func (p *Plugin) completeLogin(w http.ResponseWriter, r *http.Request, user *mod
 		return nil, err
 	}
 
+	redirectTo = sanitizeRedirectTarget(redirectTo)
 	redirectTarget := postLoginRedirect(cfg, p.API.GetConfig())
-	http.Redirect(w, r, redirectTarget, http.StatusFound)
+	finalTarget := resolveRedirectURL(redirectTarget, redirectTo)
+	http.Redirect(w, r, finalTarget, http.StatusFound)
 	return created, nil
 }
 
@@ -698,7 +889,7 @@ func issueSessionCookies(w http.ResponseWriter, r *http.Request, session *model.
 	return nil
 }
 
-func (p *Plugin) finalizeDesktopLogin(w http.ResponseWriter, r *http.Request, token, userID, csrfToken, expiresParam string) error {
+func (p *Plugin) finalizeDesktopLogin(w http.ResponseWriter, r *http.Request, token, userID, csrfToken, expiresParam, redirectTo string) error {
 	if strings.TrimSpace(token) == "" || strings.TrimSpace(userID) == "" {
 		http.Error(w, "Missing authentication parameters", http.StatusBadRequest)
 		return fmt.Errorf("missing authentication parameters")
@@ -730,8 +921,10 @@ func (p *Plugin) finalizeDesktopLogin(w http.ResponseWriter, r *http.Request, to
 		return fmt.Errorf("issue session cookies: %w", err)
 	}
 
+	redirectTo = sanitizeRedirectTarget(redirectTo)
 	redirectTarget := postLoginRedirect(cfg, p.API.GetConfig())
-	http.Redirect(w, r, redirectTarget, http.StatusFound)
+	finalTarget := resolveRedirectURL(redirectTarget, redirectTo)
+	http.Redirect(w, r, finalTarget, http.StatusFound)
 	return nil
 }
 
@@ -766,6 +959,160 @@ func postLoginRedirect(cfg *Configuration, mmCfg *model.Config) string {
 	}
 
 	return "/"
+}
+
+func sanitizeRedirectTarget(raw string) string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return ""
+	}
+
+	lower := strings.ToLower(raw)
+	if strings.HasPrefix(lower, "javascript:") || strings.HasPrefix(raw, "//") {
+		return ""
+	}
+
+	if strings.HasPrefix(lower, "http://") || strings.HasPrefix(lower, "https://") {
+		parsed, err := url.Parse(raw)
+		if err != nil {
+			return ""
+		}
+		raw = parsed.Path
+		if parsed.RawQuery != "" {
+			raw = fmt.Sprintf("%s?%s", raw, parsed.RawQuery)
+		}
+		if parsed.Fragment != "" {
+			raw = fmt.Sprintf("%s#%s", raw, parsed.Fragment)
+		}
+	}
+
+	if !strings.HasPrefix(raw, "/") {
+		return ""
+	}
+
+	if len(raw) > 2048 {
+		raw = raw[:2048]
+	}
+
+	pluginRoot := fmt.Sprintf("/plugins/%s", pluginID)
+	blocked := []string{
+		pluginRoot + "/login",
+		pluginRoot + "/complete",
+	}
+	for _, prefix := range blocked {
+		if strings.HasPrefix(raw, prefix) {
+			return "/"
+		}
+	}
+
+	return raw
+}
+
+func fallbackRedirectFromCookie(w http.ResponseWriter, r *http.Request, current string) string {
+	current = strings.TrimSpace(current)
+	if current != "" && current != "/" {
+		return current
+	}
+	hint := consumeRedirectHintCookie(w, r)
+	if hint == "" {
+		return current
+	}
+	return hint
+}
+
+func fallbackRedirectFromReferer(r *http.Request, current string) string {
+	current = strings.TrimSpace(current)
+	if current != "" && current != "/" {
+		return current
+	}
+	if r == nil {
+		return current
+	}
+	referer := strings.TrimSpace(r.Referer())
+	if referer == "" {
+		return current
+	}
+	parsed, err := url.Parse(referer)
+	if err != nil {
+		return current
+	}
+	path := strings.TrimSpace(parsed.Path)
+	if path == "" {
+		return current
+	}
+	if parsed.RawQuery != "" {
+		path = fmt.Sprintf("%s?%s", path, parsed.RawQuery)
+	}
+	if parsed.Fragment != "" {
+		path = fmt.Sprintf("%s#%s", path, parsed.Fragment)
+	}
+	sanitized := sanitizeRedirectTarget(path)
+	if sanitized == "" || sanitized == "/" {
+		return current
+	}
+	pluginRoot := fmt.Sprintf("/plugins/%s", pluginID)
+	if strings.HasPrefix(sanitized, pluginRoot) {
+		return current
+	}
+	return sanitized
+}
+
+func consumeRedirectHintCookie(w http.ResponseWriter, r *http.Request) string {
+	if r == nil {
+		return ""
+	}
+	cookie, err := r.Cookie(redirectHintCookie)
+	if err != nil {
+		return ""
+	}
+	expireRedirectHintCookie(w)
+	value := strings.TrimSpace(cookie.Value)
+	if value == "" {
+		return ""
+	}
+	return sanitizeRedirectTarget(value)
+}
+
+func expireRedirectHintCookie(w http.ResponseWriter) {
+	if w == nil {
+		return
+	}
+	http.SetCookie(w, &http.Cookie{
+		Name:     redirectHintCookie,
+		Value:    "",
+		Path:     "/",
+		HttpOnly: true,
+		SameSite: http.SameSiteLaxMode,
+		Expires:  time.Unix(0, 0),
+		MaxAge:   -1,
+	})
+}
+
+func resolveRedirectURL(baseURL, redirectPath string) string {
+	baseURL = strings.TrimSpace(baseURL)
+	if baseURL == "" {
+		baseURL = "/"
+	}
+	if strings.TrimSpace(redirectPath) == "" {
+		return baseURL
+	}
+
+	parsedBase, err := url.Parse(baseURL)
+	if err != nil {
+		return baseURL
+	}
+	target, err := url.Parse(redirectPath)
+	if err != nil {
+		return baseURL
+	}
+	if target.Scheme != "" || target.Host != "" {
+		return baseURL
+	}
+
+	parsedBase.Path = target.Path
+	parsedBase.RawQuery = target.RawQuery
+	parsedBase.Fragment = target.Fragment
+	return parsedBase.String()
 }
 
 func pluginLandingURL(cfg *Configuration) string {
@@ -867,6 +1214,15 @@ func htmlEscape(value string) string {
 	return template.HTMLEscapeString(value)
 }
 
+func hashForDiagnostics(value string) string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return ""
+	}
+	sum := sha256.Sum256([]byte(value))
+	return fmt.Sprintf("%x", sum)
+}
+
 // createUserSession creates a Mattermost session for the given user without setting cookies.
 func (p *Plugin) createUserSession(user *model.User) (*model.Session, error) {
 	session := &model.Session{UserId: user.Id, Roles: strings.TrimSpace(user.Roles)}
@@ -886,8 +1242,9 @@ func (p *Plugin) createUserSession(user *model.User) (*model.Session, error) {
 }
 
 // redirectToMobileComplete redirects to the /complete endpoint with session tokens for mobile/desktop clients.
-func (p *Plugin) redirectToMobileComplete(w http.ResponseWriter, r *http.Request, session *model.Session) {
+func (p *Plugin) redirectToMobileComplete(w http.ResponseWriter, r *http.Request, session *model.Session, redirectTo string) {
 	cfg := p.getConfiguration()
+	redirectPath := sanitizeRedirectTarget(redirectTo)
 
 	// Build the complete URL with tokens as query parameters
 	completeURL, err := url.Parse(cfg.RedirectURL)
@@ -909,6 +1266,9 @@ func (p *Plugin) redirectToMobileComplete(w http.ResponseWriter, r *http.Request
 	if session != nil && session.ExpiresAt > 0 {
 		q.Set("MMEXPIRES", strconv.FormatInt(session.ExpiresAt, 10))
 	}
+	if redirectPath != "" {
+		q.Set("MMREDIRECT", redirectPath)
+	}
 	completeURL.RawQuery = q.Encode()
 
 	http.Redirect(w, r, completeURL.String(), http.StatusFound)
@@ -926,6 +1286,7 @@ func (p *Plugin) handleMobileComplete(w http.ResponseWriter, r *http.Request) {
 	userID := r.URL.Query().Get("MMUSERID")
 	csrfToken := r.URL.Query().Get("MMCSRF")
 	expiresParam := r.URL.Query().Get("MMEXPIRES")
+	redirectPath := sanitizeRedirectTarget(r.URL.Query().Get("MMREDIRECT"))
 	isDesktopCallback := r.URL.Query().Get("desktop") == "1"
 
 	if authToken == "" || userID == "" {
@@ -934,7 +1295,7 @@ func (p *Plugin) handleMobileComplete(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if isDesktopCallback {
-		if err := p.finalizeDesktopLogin(w, r, authToken, userID, csrfToken, expiresParam); err != nil {
+		if err := p.finalizeDesktopLogin(w, r, authToken, userID, csrfToken, expiresParam, redirectPath); err != nil {
 			p.API.LogError("desktop login handoff failed", "error", err.Error())
 		}
 		return
@@ -968,22 +1329,60 @@ func (p *Plugin) handleMobileComplete(w http.ResponseWriter, r *http.Request) {
 	if expiresParam != "" {
 		params.Set("MMEXPIRES", expiresParam)
 	}
+	if redirectPath != "" {
+		params.Set("MMREDIRECT", redirectPath)
+	}
 	params.Set("desktop", "1")
 	mattermostURL := fmt.Sprintf("mattermost://%s/plugins/%s/complete?%s",
 		extractHost(siteURL), pluginID, params.Encode())
-
-	telemetry := map[string]string{
-		"site":       extractHost(siteURL),
-		"has_csrf":   strconv.FormatBool(csrfToken != ""),
-		"has_expiry": strconv.FormatBool(expiresParam != ""),
-	}
-	telemetryJSON, _ := json.Marshal(telemetry)
 
 	expiresDisplay := "session-wide"
 	if expiresParam != "" {
 		if parsedExpires, err := strconv.ParseInt(expiresParam, 10, 64); err == nil && parsedExpires > 0 {
 			expiresDisplay = time.UnixMilli(parsedExpires).UTC().Format(time.RFC3339)
 		}
+	}
+
+	callbackBase := strings.TrimRight(siteURL, "/")
+	if callbackBase == "" {
+		callbackBase = siteURL
+	}
+	callbackHint := fmt.Sprintf("%s/plugins/%s/complete?desktop=1", callbackBase, pluginID)
+
+	diagID := fmt.Sprintf("desktop-%d", time.Now().UnixNano())
+	diagSnapshot := map[string]string{
+		"request_id":            diagID,
+		"request_time_utc":      time.Now().UTC().Format(time.RFC3339Nano),
+		"raw_query":             r.URL.RawQuery,
+		"user_agent":            strings.TrimSpace(r.UserAgent()),
+		"site_url":              siteURL,
+		"plugin_id":             pluginID,
+		"deeplink":              mattermostURL,
+		"token_length":          strconv.Itoa(len(authToken)),
+		"token_sha256":          hashForDiagnostics(authToken),
+		"csrf_length":           strconv.Itoa(len(csrfToken)),
+		"csrf_sha256":           hashForDiagnostics(csrfToken),
+		"expires_param":         expiresParam,
+		"expires_display":       expiresDisplay,
+		"desktop_callback_hint": callbackHint,
+		"redirect_path":         redirectPath,
+	}
+	if referer := strings.TrimSpace(r.Referer()); referer != "" {
+		diagSnapshot["referer"] = referer
+	}
+
+	if csrfToken == "" {
+		diagSnapshot["csrf_sha256"] = ""
+		diagSnapshot["csrf_length"] = "0"
+	}
+
+	p.API.LogInfo("rendering desktop redirect", "request_id", diagID, "query", r.URL.RawQuery, "token_hash", diagSnapshot["token_sha256"], "csrf_hash", diagSnapshot["csrf_sha256"], "expires", expiresParam, "redirect_path", redirectPath)
+
+	diagJSON, _ := json.Marshal(diagSnapshot)
+	diagJSEscaped := template.JSEscapeString(string(diagJSON))
+	redirectDisplay := redirectPath
+	if redirectDisplay == "" {
+		redirectDisplay = "/"
 	}
 
 	// Render an HTML page that will trigger the desktop app redirect
@@ -1003,17 +1402,99 @@ func (p *Plugin) handleMobileComplete(w http.ResponseWriter, r *http.Request) {
 		.actions { margin-top: 1.5rem; }
 		a.primary { display: inline-block; padding: 0.85rem 1.6rem; border-radius: 999px; font-weight: 600; background: #38bdf8; color: #0f172a; text-decoration: none; }
 		a.primary:hover { opacity: 0.9; }
+		.meta code { background: rgba(15,23,42,0.7); padding: 0.1rem 0.4rem; border-radius: 6px; font-size: 0.85rem; }
+		details { margin-top: 1.25rem; text-align: left; background: rgba(15,23,42,0.6); border-radius: 12px; padding: 1rem; border: 1px solid rgba(148,163,184,0.2); }
+		details summary { cursor: pointer; font-weight: 600; }
+		.diag-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 0.75rem; margin-top: 1rem; }
+		.label { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.08em; color: #94a3b8; }
+		.value { font-family: monospace; word-break: break-all; font-size: 0.85rem; }
+		.hint { font-size: 0.7rem; color: #cbd5f5; }
+		pre { max-height: 220px; overflow: auto; background: rgba(2,6,23,0.85); padding: 0.75rem; border-radius: 8px; font-size: 0.8rem; }
+		.diag-actions { margin: 0.5rem 0 1rem; display: flex; gap: 0.5rem; flex-wrap: wrap; }
+		button.copy { background: transparent; border: 1px solid rgba(148,163,184,0.4); border-radius: 8px; color: #f1f5f9; padding: 0.4rem 0.8rem; cursor: pointer; }
+		button.copy:hover { border-color: #38bdf8; color: #38bdf8; }
 	</style>
 	<script>
-		// Automatically try to open the desktop app
+		const deepLinkTarget = %q;
+		const diagSnapshot = JSON.parse('%s');
+		let attemptCount = 0;
+
+		function updateDiagnosticsView() {
+			diagSnapshot.visibilityState = document.visibilityState;
+			diagSnapshot.navigatorUserAgent = window.navigator.userAgent;
+			const pre = document.getElementById('diagnostics-json');
+			if (pre) {
+				pre.textContent = JSON.stringify(diagSnapshot, null, 2);
+			}
+		}
+
+		function triggerDeepLink() {
+			attemptCount += 1;
+			diagSnapshot.lastAttemptAt = new Date().toISOString();
+			window.location.href = deepLinkTarget;
+			const attemptEl = document.getElementById('attempt-count');
+			if (attemptEl) {
+				attemptEl.textContent = attemptCount.toString();
+			}
+			updateDiagnosticsView();
+		}
+
+		function copyDiagnostics() {
+			const pre = document.getElementById('diagnostics-json');
+			if (!pre) {
+				return;
+			}
+			const text = pre.textContent || '';
+			if (!text) {
+				return;
+			}
+			function legacyCopy() {
+				const temp = document.createElement('textarea');
+				temp.value = text;
+				temp.setAttribute('readonly', '');
+				temp.style.position = 'absolute';
+				temp.style.left = '-9999px';
+				document.body.appendChild(temp);
+				temp.select();
+				try {
+					document.execCommand('copy');
+				} catch (err) {}
+				document.body.removeChild(temp);
+			}
+			if (navigator.clipboard && navigator.clipboard.writeText) {
+				navigator.clipboard.writeText(text).catch(function() {
+					legacyCopy();
+				});
+			} else {
+				legacyCopy();
+			}
+		}
+
 		window.onload = function() {
-			window.location.href = '%s';
-			// Show manual link after a delay
+			triggerDeepLink();
 			setTimeout(function() {
 				document.getElementById('manual-link').style.display = 'block';
 				document.getElementById('spinner').style.display = 'none';
 			}, 3000);
+			const copyButton = document.getElementById('copy-diagnostics');
+			if (copyButton) {
+				copyButton.addEventListener('click', function(event) {
+					event.preventDefault();
+					copyDiagnostics();
+				});
+			}
+			const retryButton = document.getElementById('retry-deeplink');
+			if (retryButton) {
+				retryButton.addEventListener('click', function(event) {
+					event.preventDefault();
+					triggerDeepLink();
+				});
+			}
+			setInterval(updateDiagnosticsView, 2000);
+			updateDiagnosticsView();
 		};
+
+		document.addEventListener('visibilitychange', updateDiagnosticsView);
 	</script>
 </head>
 <body>
@@ -1021,15 +1502,45 @@ func (p *Plugin) handleMobileComplete(w http.ResponseWriter, r *http.Request) {
 		<h1>Redirecting to Mattermost</h1>
 		<div id="spinner" class="spinner"></div>
 		<p>Opening the Mattermost desktop app...</p>
-			<p class="meta">Session handoff window expires: <strong>%s</strong></p>
-			<p class="meta" style="word-break: break-all; font-size: 0.65rem; color: #94a3b8;">Diagnostics: %s</p>
-		<div id="manual-link" class="actions" style="display: none;">
+		<p class="meta">Session handoff window expires: <strong>%s</strong></p>
+		<p class="meta">Return target after login: <code>%s</code></p>
+		<p class="meta">Handoff ID: <code>%s</code></p>
+		<p class="meta">Auto-attempts triggered: <strong><span id="attempt-count">0</span></strong></p>
+		<details class="diagnostics" open>
+			<summary>Diagnostics payload</summary>
+			<div class="diag-grid">
+				<div>
+					<div class="label">Token SHA256</div>
+					<div class="value">%s</div>
+					<div class="hint">Length: %s</div>
+				</div>
+				<div>
+					<div class="label">CSRF SHA256</div>
+					<div class="value">%s</div>
+					<div class="hint">Length: %s</div>
+				</div>
+				<div>
+					<div class="label">Raw expires param</div>
+					<div class="value">%s</div>
+				</div>
+				<div>
+					<div class="label">Redirect path</div>
+					<div class="value">%s</div>
+				</div>
+			</div>
+			<div class="diag-actions">
+				<button id="copy-diagnostics" class="copy">Copy JSON snapshot</button>
+				<button id="retry-deeplink" class="copy">Retry deep link</button>
+			</div>
+			<pre id="diagnostics-json">Collecting...</pre>
+				</details>
+				<div id="manual-link" class="actions" style="display: none;">
 			<p>If the app didn't open automatically:</p>
 			<a class="primary" href="%s">Click here to open Mattermost</a>
 		</div>
 	</main>
 </body>
-</html>`, expiresDisplay, htmlEscape(string(telemetryJSON)), mattermostURL, mattermostURL)
+		</html>`, mattermostURL, diagJSEscaped, expiresDisplay, redirectDisplay, diagSnapshot["request_id"], diagSnapshot["token_sha256"], diagSnapshot["token_length"], diagSnapshot["csrf_sha256"], diagSnapshot["csrf_length"], diagSnapshot["expires_param"], diagSnapshot["redirect_path"], mattermostURL)
 }
 
 // extractHost extracts the host from a URL string for use in mattermost:// protocol.

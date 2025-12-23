@@ -127,9 +127,10 @@ ensure_plugin_installed() {
     return 0
   fi
 
-  if ! run_mmctl plugin list | grep -q "${PLUGIN_ID}"; then
-    log "Uploading plugin ${PLUGIN_ID} from ${PLUGIN_CONTAINER_PATH} (force replace)."
-    run_mmctl plugin add --force "${PLUGIN_CONTAINER_PATH}" >/dev/null
+  log "Uploading plugin ${PLUGIN_ID} from ${PLUGIN_CONTAINER_PATH} (force replace)."
+  if ! run_mmctl plugin add --force "${PLUGIN_CONTAINER_PATH}" >/dev/null; then
+    log "Failed to upload plugin ${PLUGIN_ID}." >&2
+    exit 1
   fi
 
   log "Enabling plugin ${PLUGIN_ID}."
