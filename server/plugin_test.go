@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strings"
 	"testing"
 	"time"
 
@@ -230,4 +231,210 @@ func cookieByName(cookies []*http.Cookie, name string) *http.Cookie {
 		}
 	}
 	return nil
+}
+
+func TestExtractHost(t *testing.T) {
+	tests := []struct {
+		name     string
+		urlStr   string
+		expected string
+	}{
+		{
+			name:     "full URL",
+			urlStr:   "https://mattermost.example.com:8065/path",
+			expected: "mattermost.example.com:8065",
+		},
+		{
+			name:     "URL with default port",
+			urlStr:   "https://mattermost.example.com",
+			expected: "mattermost.example.com",
+		},
+		{
+			name:     "localhost",
+			urlStr:   "http://localhost:8065",
+			expected: "localhost:8065",
+		},
+		{
+			name:     "invalid URL",
+			urlStr:   "not a valid url",
+			expected: "localhost",
+		},
+		{
+			name:     "empty URL",
+			urlStr:   "",
+			expected: "localhost",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := extractHost(tt.urlStr)
+			if got != tt.expected {
+				t.Errorf("extractHost(%q) = %q, want %q", tt.urlStr, got, tt.expected)
+			}
+		})
+	}
+}
+
+func TestHandleMobileCompleteTrailingSlash(t *testing.T) {
+	p := &Plugin{}
+	router := p.getRouter()
+
+	cases := []struct {
+		name string
+		path string
+	}{
+		{name: "without slash", path: "/complete?desktop=1"},
+		{name: "with slash", path: "/complete/?desktop=1"},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodGet, "http://example.com"+tc.path, nil)
+			rec := httptest.NewRecorder()
+			router.ServeHTTP(rec, req)
+			if rec.Code != http.StatusBadRequest {
+				t.Fatalf("expected mobile complete handler for %s, got status %d", tc.path, rec.Code)
+			}
+		})
+	}
+}
+
+func TestAuthSessionMobile(t *testing.T) {
+	t.Run("stores mobile flag", func(t *testing.T) {
+		session := &authSession{
+			Nonce:        "test-nonce",
+			CodeVerifier: "test-verifier",
+			CreatedAt:    time.Now().Unix(),
+			IsMobile:     true,
+		}
+
+		if !session.IsMobile {
+			t.Fatal("expected IsMobile to be true")
+		}
+	})
+
+	t.Run("defaults to web client", func(t *testing.T) {
+		session := &authSession{
+			Nonce:        "test-nonce",
+			CodeVerifier: "test-verifier",
+			CreatedAt:    time.Now().Unix(),
+		}
+
+		if session.IsMobile {
+			t.Fatal("expected IsMobile to be false by default")
+		}
+	})
+}
+
+func TestSanitizeRedirectTarget(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{
+			name:     "valid relative path",
+			input:    "/channels/team/channel",
+			expected: "/channels/team/channel",
+		},
+		{
+			name:     "blocked plugin path",
+			input:    "/plugins/com.mm.oidc/login",
+			expected: "/",
+		},
+		{
+			name:     "javascript injection",
+			input:    "javascript:alert(1)",
+			expected: "",
+		},
+		{
+			name:     "protocol relative URL",
+			input:    "//evil.com/path",
+			expected: "",
+		},
+		{
+			name:     "absolute URL converted to path",
+			input:    "https://example.com/path/to/page",
+			expected: "/path/to/page",
+		},
+		{
+			name:     "empty string",
+			input:    "",
+			expected: "",
+		},
+		{
+			name:     "very long path truncated",
+			input:    "/" + strings.Repeat("a", 3000),
+			expected: "/" + strings.Repeat("a", 2047), // Truncated to 2048 total including leading /
+		},
+		{
+			name:     "query parameters and fragments",
+			input:    "/channels/team?param=value#anchor",
+			expected: "/channels/team?param=value#anchor",
+		},
+		{
+			name:     "path with dots",
+			input:    "/channels/../admin",
+			expected: "/channels/../admin",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := sanitizeRedirectTarget(tt.input)
+			if got != tt.expected {
+				t.Errorf("sanitizeRedirectTarget(%q) = %q, want %q", tt.input, got, tt.expected)
+			}
+		})
+	}
+}
+
+func TestResolveRedirectURL(t *testing.T) {
+	tests := []struct {
+		name     string
+		baseURL  string
+		redirect string
+		expected string
+	}{
+		{
+			name:     "empty redirect returns baseURL",
+			baseURL:  "https://mm.example.com",
+			redirect: "",
+			expected: "https://mm.example.com",
+		},
+		{
+			name:     "relative path merged with base",
+			baseURL:  "https://mm.example.com",
+			redirect: "/channels/team",
+			expected: "https://mm.example.com/channels/team",
+		},
+		{
+			name:     "path with query parameters",
+			baseURL:  "https://mm.example.com",
+			redirect: "/channels?id=123",
+			expected: "https://mm.example.com/channels?id=123",
+		},
+		{
+			name:     "path with fragment",
+			baseURL:  "https://mm.example.com",
+			redirect: "/channels#section",
+			expected: "https://mm.example.com/channels#section",
+		},
+		{
+			name:     "malformed base URL returns baseURL",
+			baseURL:  "://invalid",
+			redirect: "/channels",
+			expected: "://invalid",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := resolveRedirectURL(tt.baseURL, tt.redirect)
+			if got != tt.expected {
+				t.Errorf("resolveRedirectURL(%q, %q) = %q, want %q", tt.baseURL, tt.redirect, got, tt.expected)
+			}
+		})
+	}
 }

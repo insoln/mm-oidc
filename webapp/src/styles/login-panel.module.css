@@ -112,6 +112,87 @@
   font-size: 1rem;
 }
 
+.diagnostics {
+  background: var(--surface);
+  border-radius: 24px;
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  padding: 2rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+.diagHeader {
+  display: flex;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 1rem;
+}
+
+.diagTitle {
+  margin: 0.2rem 0 0;
+  font-size: 1.4rem;
+}
+
+.diagActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
+.diagButton {
+  border: 1px solid rgba(248, 250, 252, 0.4);
+  background: transparent;
+  color: var(--text);
+  border-radius: 12px;
+  padding: 0.65rem 1.1rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: border-color 120ms ease, transform 120ms ease;
+}
+
+.diagButton:hover {
+  border-color: var(--accent);
+  transform: translateY(-2px);
+}
+
+.diagGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 1rem;
+}
+
+.diagItem {
+  background: rgba(15, 23, 42, 0.65);
+  border-radius: 16px;
+  border: 1px solid rgba(148, 163, 184, 0.15);
+  padding: 0.85rem 1rem;
+  min-height: 110px;
+}
+
+.diagLabel {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+}
+
+.diagValue {
+  margin-top: 0.35rem;
+  font-size: 0.95rem;
+  word-break: break-word;
+}
+
+.diagPre {
+  background: rgba(2, 6, 23, 0.9);
+  border-radius: 16px;
+  padding: 1rem;
+  border: 1px solid rgba(148, 163, 184, 0.25);
+  max-height: 360px;
+  overflow: auto;
+  font-size: 0.85rem;
+}
+
 .badge {
   display: inline-flex;
   align-items: center;
@@ -146,4 +227,24 @@
     width: 100%;
     text-align: center;
   }
+
+  .diagActions {
+    width: 100%;
+  }
+
+  .diagButton {
+    flex: 1 1 100%;
+    text-align: center;
+  }
+}
+
+.feedback {
+  padding: 0.75rem 1rem;
+  margin-top: 1rem;
+  background: rgba(56, 189, 248, 0.1);
+  border: 1px solid rgba(56, 189, 248, 0.3);
+  border-radius: 8px;
+  color: var(--accent);
+  font-size: 0.9rem;
+  text-align: center;
 }

@@ -90,6 +90,10 @@ Add explicit `location` blocks or conditional checks for:
 
 These carve-outs keep API clients, automation, health probes, and WebSockets functional without interference.
 
+### Native desktop/mobile detection
+
+The bundled config in [deploy/mattermost-proxy/nginx.conf](../deploy/mattermost-proxy/nginx.conf) now inspects the `User-Agent` header for the `Mattermost` token. When detected, the proxy automatically appends `isMobile=true` to the `/plugins/com.mm.oidc/login` redirect so the plugin switches to the desktop/mobile handshake (launching the system browser and handing tokens back via `mattermost://`). Servers that maintain their own ingress layer should replicate the same behavior or adjust the regex list if your fleet uses custom User-Agent strings.
+
 ### Optional Traefik pattern
 
 Traefik can reproduce the same behavior using a custom middleware plugin (for cookie inspection) or a combination of RedirectRegex and AllowList middleware. See the snippets in the original research section below or adapt [Traefik documentation](https://doc.traefik.io/traefik/) to your needs.

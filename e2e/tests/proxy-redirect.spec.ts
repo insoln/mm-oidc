@@ -204,4 +204,18 @@ test.describe('NGINX Proxy Redirect Behavior', () => {
       expect(location).not.toMatch(/\/plugins\/com\.mm\.oidc\/login/);
     }
   });
+
+  test('should append isMobile flag for native desktop clients', async ({ request }) => {
+    const response = await request.get(PROXY_BASE_URL + '/', {
+      headers: {
+        'User-Agent': 'MattermostDesktop/6.0.2'
+      },
+      maxRedirects: 0,
+      failOnStatusCode: false,
+    });
+
+    expect(response.status()).toBe(302);
+    const location = response.headers()['location'] ?? '';
+    expect(location).toMatch(/isMobile=true/);
+  });
 });

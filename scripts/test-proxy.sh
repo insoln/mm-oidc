@@ -71,6 +71,10 @@ run_test "Root URL redirect points to OIDC login" \
   "curl -s -D - -o /dev/null '${BASE_URL}/' | grep -i location" \
   '/plugins/com.mm.oidc/login'
 
+run_test "Desktop/mobile client receives mobile flag" \
+  "curl -s -D - -o /dev/null -H 'User-Agent: MattermostDesktop/6.0.2' '${BASE_URL}/' | grep -i location" \
+  'isMobile=true'
+
 echo ""
 echo "==> Scenario 2: API endpoints should NOT redirect"
 run_test "API endpoint returns 401 or 200, not redirect" \
