@@ -43,6 +43,12 @@ type authSession struct {
 	CreatedAt    int64  `json:"created_at"`
 }
 
+// mobileAuthSession extends authSession with mobile/desktop specific fields.
+type mobileAuthSession struct {
+	authSession
+	RedirectTo string `json:"redirect_to"`
+}
+
 func (s *authSession) isExpired(now time.Time) bool {
 	if s == nil {
 		return true
@@ -305,4 +311,46 @@ func (p *Plugin) verifyIDToken(ctx context.Context, provider *oidc.Provider, cfg
 	}
 
 	return &claims, nil
+}
+
+func (p *Plugin) saveMobileAuthSession(state string, session *mobileAuthSession) error {
+	payload, err := json.Marshal(session)
+	if err != nil {
+		return fmt.Errorf("marshal mobile auth session: %w", err)
+	}
+
+	if appErr := p.API.KVSetWithExpiry(mobileAuthSessionKey(state), payload, authSessionTTLSeconds); appErr != nil {
+		return fmt.Errorf("persist mobile auth session: %w", appErr)
+	}
+
+	return nil
+}
+
+func (p *Plugin) consumeMobileAuthSession(state string) (*mobileAuthSession, error) {
+	data, appErr := p.API.KVGet(mobileAuthSessionKey(state))
+	if appErr != nil {
+		return nil, fmt.Errorf("load mobile auth session: %w", appErr)
+	}
+	if data == nil {
+		return nil, nil
+	}
+
+	if err := p.API.KVDelete(mobileAuthSessionKey(state)); err != nil {
+		p.API.LogWarn("failed to delete mobile auth session", "state", state, "error", err.Error())
+	}
+
+	var session mobileAuthSession
+	if err := json.Unmarshal(data, &session); err != nil {
+		return nil, fmt.Errorf("decode mobile auth session: %w", err)
+	}
+
+	if session.isExpired(time.Now()) {
+		return nil, nil
+	}
+
+	return &session, nil
+}
+
+func mobileAuthSessionKey(state string) string {
+	return "mobile_authsession:" + state
 }

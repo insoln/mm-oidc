@@ -8,6 +8,7 @@ import (
 	"html/template"
 	"net/http"
 	"net/url"
+	"path"
 	"strings"
 	"sync"
 	"time"
@@ -147,7 +148,9 @@ func (p *Plugin) getRouter() http.Handler {
 		mux.HandleFunc("/", p.handleLanding)
 		mux.HandleFunc("/health", p.handleHealth)
 		mux.HandleFunc("/login", p.handleLogin)
+		mux.HandleFunc("/login/mobile", p.handleMobileLogin)
 		mux.HandleFunc("/callback", p.handleCallback)
+		mux.HandleFunc("/callback/mobile", p.handleMobileCallback)
 		mux.HandleFunc("/logout", p.handleLogout)
 		p.router = mux
 	}
@@ -460,6 +463,166 @@ func (p *Plugin) handleCallback(w http.ResponseWriter, r *http.Request) {
 	}
 
 	p.API.LogDebug("authentication successful", "sub", profile.Subject, "user_id", user.Id)
+}
+
+func (p *Plugin) handleMobileLogin(w http.ResponseWriter, r *http.Request) {
+	cfg := p.getConfiguration()
+	metadata := p.getMetadata()
+	if metadata == nil {
+		p.writeFriendlyError(w, http.StatusServiceUnavailable, "Identity provider unavailable", "We can't reach the configured OIDC metadata right now. Please try again in a moment.")
+		return
+	}
+
+	redirectTo := r.URL.Query().Get("redirect_to")
+	if redirectTo == "" {
+		p.writeFriendlyError(w, http.StatusBadRequest, "Missing redirect URL", "The mobile/desktop login requires a redirect_to parameter with your app's custom protocol URL (e.g., mattermost://).")
+		return
+	}
+
+	if !isValidMobileRedirectURL(redirectTo) {
+		p.writeFriendlyError(w, http.StatusBadRequest, "Invalid redirect URL", "The redirect_to parameter must use a valid custom protocol scheme (e.g., mattermost://).")
+		return
+	}
+
+	state, err := generateRandomString(stateBytes)
+	if err != nil {
+		p.API.LogError("failed to generate state", "error", err.Error())
+		p.writeFriendlyError(w, http.StatusInternalServerError, "Unable to start login", "We hit an unexpected error while preparing the login flow. Please try again.")
+		return
+	}
+
+	nonce, err := generateRandomString(nonceBytes)
+	if err != nil {
+		p.API.LogError("failed to generate nonce", "error", err.Error())
+		p.writeFriendlyError(w, http.StatusInternalServerError, "Unable to start login", "We hit an unexpected error while preparing the login flow. Please try again.")
+		return
+	}
+
+	codeVerifier, err := generateRandomString(pkceVerifierBytes)
+	if err != nil {
+		p.API.LogError("failed to generate code verifier", "error", err.Error())
+		p.writeFriendlyError(w, http.StatusInternalServerError, "Unable to start login", "We hit an unexpected error while preparing the login flow. Please try again.")
+		return
+	}
+
+	codeChallenge := pkceChallenge(codeVerifier)
+
+	// Use the mobile callback URL for redirect
+	mobileCfg := cfg.Clone()
+	mobileCfg.RedirectURL = buildMobileCallbackURL(cfg.RedirectURL)
+
+	authorizeURL, err := buildAuthorizeURL(metadata.AuthorizationEndpoint, mobileCfg, state, nonce, codeChallenge)
+	if err != nil {
+		p.API.LogError("failed to build authorize URL", "error", err.Error())
+		p.writeFriendlyError(w, http.StatusInternalServerError, "Unable to start login", "We couldn't build a valid authorization request. Please try again.")
+		return
+	}
+
+	session := &mobileAuthSession{
+		authSession: authSession{
+			Nonce:        nonce,
+			CodeVerifier: codeVerifier,
+			CreatedAt:    time.Now().Unix(),
+		},
+		RedirectTo: redirectTo,
+	}
+	if err := p.saveMobileAuthSession(state, session); err != nil {
+		p.API.LogError("failed to persist mobile auth session", "error", err.Error())
+		p.writeFriendlyError(w, http.StatusInternalServerError, "Unable to start login", "We couldn't store the temporary login session. Please try again.")
+		return
+	}
+
+	p.API.LogDebug("redirecting to OIDC provider for mobile login", "state", state, "redirect_to", redirectTo)
+	http.Redirect(w, r, authorizeURL, http.StatusFound)
+}
+
+func (p *Plugin) handleMobileCallback(w http.ResponseWriter, r *http.Request) {
+	state := r.URL.Query().Get("state")
+	code := r.URL.Query().Get("code")
+	if state == "" || code == "" {
+		p.writeFriendlyError(w, http.StatusBadRequest, "Invalid login response", "We could not validate the parameters returned from the identity provider. Please start a new login from your application.")
+		return
+	}
+
+	cfg := p.getConfiguration()
+	metadata := p.getMetadata()
+	provider := p.getProvider()
+	if metadata == nil || provider == nil {
+		p.writeFriendlyError(w, http.StatusServiceUnavailable, "Identity provider unavailable", "We can't reach the configured OIDC metadata right now. Please try again in a moment.")
+		return
+	}
+
+	session, err := p.consumeMobileAuthSession(state)
+	if err != nil {
+		p.API.LogError("failed to load mobile auth session", "state", state, "error", err.Error())
+		p.writeFriendlyError(w, http.StatusInternalServerError, "Unable to validate login", "We couldn't validate your login session. Please try again.")
+		return
+	}
+
+	if session == nil {
+		p.writeFriendlyError(w, http.StatusGone, "Login link expired", "Your login session has expired. Please launch the login flow again.")
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), tokenExchangeTimeout)
+	defer cancel()
+
+	tokens, err := p.exchangeCode(ctx, cfg, metadata, code, session.CodeVerifier)
+	if err != nil {
+		p.API.LogError("token exchange failed", "state", state, "error", err.Error())
+		p.writeFriendlyError(w, http.StatusBadGateway, "Unable to complete login", "We couldn't exchange the authorization code with the identity provider. Please try again.")
+		return
+	}
+
+	idTokenClaims, err := p.verifyIDToken(ctx, provider, cfg, tokens.IDToken, session.Nonce)
+	if err != nil {
+		p.API.LogError("id_token verification failed", "state", state, "error", err.Error())
+		p.writeFriendlyError(w, http.StatusUnauthorized, "Unable to verify identity", "We could not verify the identity information from the provider. Please try again.")
+		return
+	}
+
+	profile := buildUserProfile(idTokenClaims, cfg.ClientID)
+	p.logClaimsSnapshot(idTokenClaims, cfg.ClientID, profile.SystemAdmin)
+	user, err := p.provisionUser(profile)
+	if err != nil {
+		p.API.LogError("failed to provision user", "state", state, "error", err.Error())
+		if status, title, message, handled := friendlyProvisioningError(err); handled {
+			p.writeFriendlyError(w, status, title, message)
+		} else {
+			p.writeFriendlyError(w, http.StatusInternalServerError, "We couldn't finish signing you in", "Mattermost was unable to create or update your account. Please try again or contact your system administrator.")
+		}
+		return
+	}
+
+	// Create a session for the user
+	mmSession := &model.Session{UserId: user.Id, Roles: strings.TrimSpace(user.Roles)}
+	if mmSession.Roles == "" {
+		mmSession.Roles = model.SystemUserRoleId
+	}
+	mmSession.PreSave()
+	csrfToken := mmSession.GenerateCSRF()
+	mmSession.Id = ""
+
+	createdSession, appErr := p.API.CreateSession(mmSession)
+	if appErr != nil {
+		p.API.LogError("failed to create session", "state", state, "error", appErr.Error())
+		p.writeFriendlyError(w, http.StatusInternalServerError, "Unable to finish signing you in", "We couldn't establish a Mattermost session. Please try again.")
+		return
+	}
+
+	if csrfToken == "" {
+		csrfToken = createdSession.GetCSRF()
+	}
+
+	if err := p.persistSessionTokens(createdSession, tokens, cfg); err != nil {
+		p.API.LogWarn("failed to persist session tokens", "state", state, "error", err.Error())
+	}
+
+	p.API.LogDebug("mobile authentication successful", "sub", profile.Subject, "user_id", user.Id, "redirect_to", session.RedirectTo)
+
+	// Render the mobile auth complete page with redirect
+	redirectURL := buildMobileRedirectURL(session.RedirectTo, createdSession.Token, csrfToken)
+	renderMobileAuthComplete(w, redirectURL)
 }
 
 func (p *Plugin) handleLogout(w http.ResponseWriter, r *http.Request) {
@@ -792,4 +955,141 @@ func requestIsSecure(r *http.Request, cfg *Configuration) bool {
 
 func htmlEscape(value string) string {
 	return template.HTMLEscapeString(value)
+}
+
+// Mobile/Desktop authentication helpers
+
+func isValidMobileRedirectURL(redirectURL string) bool {
+	if strings.TrimSpace(redirectURL) == "" {
+		return false
+	}
+
+	parsed, err := url.Parse(redirectURL)
+	if err != nil {
+		return false
+	}
+
+	// Check for custom protocol schemes commonly used by mobile/desktop apps
+	// Common schemes: mattermost://, mattermostdesktop://, etc.
+	scheme := strings.ToLower(parsed.Scheme)
+	if scheme == "" || scheme == "http" || scheme == "https" {
+		return false
+	}
+
+	// Must have a valid custom scheme (e.g., mattermost://)
+	return len(scheme) > 0
+}
+
+func buildMobileCallbackURL(baseRedirectURL string) string {
+	parsed, err := url.Parse(baseRedirectURL)
+	if err != nil {
+		return baseRedirectURL + "/mobile"
+	}
+
+	// Change /callback to /callback/mobile
+	if strings.HasSuffix(parsed.Path, "/callback") {
+		parsed.Path = parsed.Path + "/mobile"
+	} else {
+		parsed.Path = path.Join(parsed.Path, "callback", "mobile")
+	}
+
+	return parsed.String()
+}
+
+func buildMobileRedirectURL(appURL, sessionToken, csrfToken string) string {
+	parsed, err := url.Parse(appURL)
+	if err != nil {
+		return appURL
+	}
+
+	q := parsed.Query()
+	q.Set(model.SessionCookieToken, sessionToken)
+	q.Set(model.SessionCookieCsrf, csrfToken)
+	parsed.RawQuery = q.Encode()
+
+	return parsed.String()
+}
+
+func renderMobileAuthComplete(w http.ResponseWriter, redirectURL string) {
+	escapedLink := htmlEscape(redirectURL)
+
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	fmt.Fprintf(w, `<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=1.0, user-scalable=yes, viewport-fit=cover">
+	<title>Authentication Complete</title>
+	<style>
+		body {
+			color: #333;
+			background-color: #fff;
+			font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+			margin: 0;
+			padding: 2rem;
+			text-align: center;
+		}
+		.container {
+			max-width: 600px;
+			margin: 4rem auto;
+			padding: 2rem;
+		}
+		svg {
+			width: 64px;
+			height: 64px;
+			fill: #3c763d;
+			margin-bottom: 1rem;
+		}
+		h1 {
+			font-size: 1.75rem;
+			margin: 1rem 0;
+			color: #333;
+		}
+		p {
+			line-height: 1.6;
+			margin: 1rem 0;
+			color: #666;
+		}
+		a {
+			display: inline-block;
+			margin-top: 1rem;
+			padding: 0.75rem 1.5rem;
+			background: #38bdf8;
+			color: #fff;
+			text-decoration: none;
+			border-radius: 999px;
+			font-weight: 600;
+		}
+		a:hover {
+			opacity: 0.9;
+		}
+		#redirecting-message {
+			display: block;
+		}
+		#close-tab-message {
+			display: none;
+		}
+	</style>
+	<meta http-equiv="refresh" content="2; url=%s">
+</head>
+<body>
+	<div class="container">
+		<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+			<path d="M504 256c0 136.967-111.033 248-248 248S8 392.967 8 256 119.033 8 256 8s248 111.033 248 248zM227.314 387.314l184-184c6.248-6.248 6.248-16.379 0-22.627l-22.627-22.627c-6.248-6.249-16.379-6.249-22.628 0L216 308.118l-70.059-70.059c-6.248-6.248-16.379-6.248-22.628 0l-22.627 22.627c-6.248 6.248-6.248 16.379 0 22.627l104 104c6.249 6.249 16.379 6.249 22.628.001z"/>
+		</svg>
+		<h1>Authentication Complete</h1>
+		<p id="redirecting-message">Redirecting back to your application...</p>
+		<p id="close-tab-message">You can close this browser window and return to your application.</p>
+		<p><a href="%s">Click here if you are not automatically redirected</a></p>
+	</div>
+	<script>
+		window.onload = function() {
+			setTimeout(function() {
+				document.getElementById('redirecting-message').style.display = 'none';
+				document.getElementById('close-tab-message').style.display = 'block';
+			}, 2000);
+		}
+	</script>
+</body>
+</html>`, escapedLink, escapedLink)
 }
