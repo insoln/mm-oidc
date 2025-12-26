@@ -1518,6 +1518,15 @@ func (p *Plugin) handleMobileComplete(w http.ResponseWriter, r *http.Request) {
 				});
 			}
 			
+			// Trigger deep link on page load
+			triggerDeepLink();
+			
+			// Show manual link after delay
+			setTimeout(function() {
+				document.getElementById('manual-link').style.display = 'block';
+				document.getElementById('spinner').style.display = 'none';
+			}, 3000);
+			
 			// Optimize diagnostics updates: pause when tab not visible
 			let intervalId = null;
 			function startDiagnosticsUpdates() {
