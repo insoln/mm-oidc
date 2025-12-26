@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strings"
 	"testing"
 	"time"
 
@@ -364,8 +365,8 @@ func TestSanitizeRedirectTarget(t *testing.T) {
 		},
 		{
 			name:     "very long path truncated",
-			input:    "/" + string(make([]byte, 3000)),
-			expected: "/" + string(make([]byte, 2047)), // Truncated to 2048 total including leading /
+			input:    "/" + strings.Repeat("a", 3000),
+			expected: "/" + strings.Repeat("a", 2047), // Truncated to 2048 total including leading /
 		},
 		{
 			name:     "query parameters and fragments",
