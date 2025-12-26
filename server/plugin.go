@@ -896,21 +896,23 @@ func (p *Plugin) finalizeDesktopLogin(w http.ResponseWriter, r *http.Request, to
 		return fmt.Errorf("missing authentication parameters")
 	}
 
-	var expiresAt int64
-	if strings.TrimSpace(expiresParam) != "" {
-		parsed, err := strconv.ParseInt(expiresParam, 10, 64)
-		if err != nil {
-			p.API.LogWarn("invalid expiry parameter in desktop completion", "value", expiresParam)
-		} else {
-			expiresAt = parsed
-		}
+	// Validate the session token with the Mattermost API
+	existingSession, appErr := p.API.GetSession(token)
+	if appErr != nil {
+		p.API.LogError("invalid or expired session token", "error", appErr.Error())
+		http.Error(w, "Invalid or expired session", http.StatusUnauthorized)
+		return fmt.Errorf("invalid session token: %w", appErr)
 	}
 
-	session := &model.Session{
-		UserId:    userID,
-		Token:     token,
-		ExpiresAt: expiresAt,
+	// Verify the token belongs to the specified user
+	if existingSession.UserId != userID {
+		p.API.LogError("session token does not match user ID", "expected_user", userID, "actual_user", existingSession.UserId)
+		http.Error(w, "Session token mismatch", http.StatusUnauthorized)
+		return fmt.Errorf("session token does not match user ID")
 	}
+
+	// Use the validated session from the API
+	session := existingSession
 
 	if strings.TrimSpace(csrfToken) != "" {
 		session.AddProp("csrf", csrfToken)
@@ -1243,6 +1245,13 @@ func (p *Plugin) createUserSession(user *model.User) (*model.Session, error) {
 }
 
 // redirectToMobileComplete redirects to the /complete endpoint with session tokens for mobile/desktop clients.
+//
+// SECURITY NOTE: Tokens are passed via URL query parameters for desktop app protocol handler compatibility.
+// This is acceptable because:
+// - Tokens are short-lived (single session)
+// - Tokens are validated in finalizeDesktopLogin before being used
+// - The /complete page is designed to close immediately after handoff
+// - This is the standard pattern for desktop app OAuth flows
 func (p *Plugin) redirectToMobileComplete(w http.ResponseWriter, r *http.Request, session *model.Session, redirectTo string) {
 	cfg := p.getConfiguration()
 	redirectPath := sanitizeRedirectTarget(redirectTo)
@@ -1336,6 +1345,13 @@ func (p *Plugin) handleMobileComplete(w http.ResponseWriter, r *http.Request) {
 	params.Set("desktop", "1")
 	mattermostURL := fmt.Sprintf("mattermost://%s/plugins/%s/complete?%s",
 		extractHost(siteURL), pluginID, params.Encode())
+	
+	// Validate deep link URL has correct protocol
+	if !strings.HasPrefix(mattermostURL, "mattermost://") {
+		p.API.LogError("invalid deep link URL generated", "url", mattermostURL)
+		http.Error(w, "Configuration error: invalid deep link URL", http.StatusInternalServerError)
+		return
+	}
 
 	expiresDisplay := "session-wide"
 	if expiresParam != "" {
@@ -1417,7 +1433,7 @@ func (p *Plugin) handleMobileComplete(w http.ResponseWriter, r *http.Request) {
 	</style>
 	<script>
 		const deepLinkTarget = %q;
-		const diagSnapshot = JSON.parse('%s');
+		const diagSnapshot = JSON.parse(%q);
 		let attemptCount = 0;
 
 		function updateDiagnosticsView() {
@@ -1432,7 +1448,17 @@ func (p *Plugin) handleMobileComplete(w http.ResponseWriter, r *http.Request) {
 		function triggerDeepLink() {
 			attemptCount += 1;
 			diagSnapshot.lastAttemptAt = new Date().toISOString();
-			window.location.href = deepLinkTarget;
+			
+			// Validate deep link URL
+			const target = typeof deepLinkTarget === 'string' ? deepLinkTarget : '';
+			const lowerTarget = target.toLowerCase();
+			if (!lowerTarget.startsWith('mattermost://')) {
+				diagSnapshot.deepLinkValidationError = 'Invalid deep link target scheme; expected "mattermost://"';
+				updateDiagnosticsView();
+				return;
+			}
+			
+			window.location.href = target;
 			const attemptEl = document.getElementById('attempt-count');
 			if (attemptEl) {
 				attemptEl.textContent = attemptCount.toString();
@@ -1491,11 +1517,33 @@ func (p *Plugin) handleMobileComplete(w http.ResponseWriter, r *http.Request) {
 					triggerDeepLink();
 				});
 			}
-			setInterval(updateDiagnosticsView, 2000);
+			
+			// Optimize diagnostics updates: pause when tab not visible
+			let intervalId = null;
+			function startDiagnosticsUpdates() {
+				if (intervalId) return;
+				intervalId = setInterval(updateDiagnosticsView, 2000);
+			}
+			function stopDiagnosticsUpdates() {
+				if (intervalId) {
+					clearInterval(intervalId);
+					intervalId = null;
+				}
+			}
+			
+			// Pause/resume based on page visibility
+			document.addEventListener('visibilitychange', function() {
+				if (document.visibilityState === 'visible') {
+					updateDiagnosticsView();
+					startDiagnosticsUpdates();
+				} else {
+					stopDiagnosticsUpdates();
+				}
+			});
+			
+			startDiagnosticsUpdates();
 			updateDiagnosticsView();
 		};
-
-		document.addEventListener('visibilitychange', updateDiagnosticsView);
 	</script>
 </head>
 <body>
@@ -1534,8 +1582,8 @@ func (p *Plugin) handleMobileComplete(w http.ResponseWriter, r *http.Request) {
 				<button id="retry-deeplink" class="copy">Retry deep link</button>
 			</div>
 			<pre id="diagnostics-json">Collecting...</pre>
-				</details>
-				<div id="manual-link" class="actions" style="display: none;">
+		</details>
+		<div id="manual-link" class="actions" style="display: none;">
 			<p>If the app didn't open automatically:</p>
 			<a class="primary" href="%s">Click here to open Mattermost</a>
 		</div>
