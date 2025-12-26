@@ -86,7 +86,7 @@ func TestBuildMobileCallbackURL(t *testing.T) {
 			expected: "http://localhost:8065/plugins/com.mm.oidc/callback/mobile?foo=bar",
 		},
 		{
-			name:     "invalid url returns modified",
+			name:     "invalid url gets encoded and appended",
 			base:     "not a url",
 			expected: "not%20a%20url/callback/mobile",
 		},

@@ -8,7 +8,6 @@ import (
 	"html/template"
 	"net/http"
 	"net/url"
-	"path"
 	"strings"
 	"sync"
 	"time"
@@ -983,14 +982,17 @@ func isValidMobileRedirectURL(redirectURL string) bool {
 func buildMobileCallbackURL(baseRedirectURL string) string {
 	parsed, err := url.Parse(baseRedirectURL)
 	if err != nil {
-		return baseRedirectURL + "/mobile"
+		// If parsing fails, this is likely not a valid URL,
+		// but we still try to append the expected path
+		return baseRedirectURL + "/callback/mobile"
 	}
 
 	// Change /callback to /callback/mobile
 	if strings.HasSuffix(parsed.Path, "/callback") {
 		parsed.Path = parsed.Path + "/mobile"
 	} else {
-		parsed.Path = path.Join(parsed.Path, "callback", "mobile")
+		// Construct path without using path.Join to avoid unwanted path cleaning
+		parsed.Path = strings.TrimRight(parsed.Path, "/") + "/callback/mobile"
 	}
 
 	return parsed.String()
