@@ -6,6 +6,8 @@ import {loginURL, pluginBasePath} from '../utils/routes';
 const LoginPanel = () => {
   const {data, status, refresh} = useHealth();
   const [diagnosticsVersion, setDiagnosticsVersion] = useState(0);
+  const [copyFeedback, setCopyFeedback] = useState('');
+  const [refreshFeedback, setRefreshFeedback] = useState('');
   const busy = status === 'loading';
   const ready = status === 'ready';
   const issuer = data?.issuer_url ?? '—';
@@ -104,6 +106,8 @@ const LoginPanel = () => {
 
   const handleDiagnosticsRefresh = useCallback(() => {
     setDiagnosticsVersion((value) => value + 1);
+    setRefreshFeedback('Diagnostics refreshed');
+    setTimeout(() => setRefreshFeedback(''), 3000);
   }, []);
 
   const handleDiagnosticsCopy = useCallback(() => {
@@ -125,14 +129,21 @@ const LoginPanel = () => {
       textarea.select();
       try {
         document.execCommand('copy');
+        setCopyFeedback('JSON copied to clipboard');
       } catch (error) {
-        // no-op; clipboard unavailable
+        setCopyFeedback('Failed to copy');
       }
       document.body.removeChild(textarea);
+      setTimeout(() => setCopyFeedback(''), 3000);
     };
 
     if (navigator?.clipboard?.writeText) {
-      navigator.clipboard.writeText(text).catch(legacyCopy);
+      navigator.clipboard.writeText(text)
+        .then(() => {
+          setCopyFeedback('JSON copied to clipboard');
+          setTimeout(() => setCopyFeedback(''), 3000);
+        })
+        .catch(legacyCopy);
       return;
     }
 
@@ -208,14 +219,27 @@ const LoginPanel = () => {
             <p className={styles.copy}>Useful when the desktop app bounces you back here instead of the channel you expected.</p>
           </div>
           <div className={styles.diagActions}>
-            <button className={styles.diagButton} onClick={handleDiagnosticsRefresh}>
+            <button 
+              className={styles.diagButton} 
+              onClick={handleDiagnosticsRefresh}
+              aria-label="Refresh diagnostics snapshot"
+            >
               Refresh snapshot
             </button>
-            <button className={styles.diagButton} onClick={handleDiagnosticsCopy}>
+            <button 
+              className={styles.diagButton} 
+              onClick={handleDiagnosticsCopy}
+              aria-label="Copy diagnostics JSON to clipboard"
+            >
               Copy JSON
             </button>
           </div>
         </div>
+        {(copyFeedback || refreshFeedback) && (
+          <div role="status" aria-live="polite" className={styles.feedback}>
+            {copyFeedback || refreshFeedback}
+          </div>
+        )}
 
         <div className={styles.diagGrid}>
           {diagnosticsSummary.map(({label, value}) => (
