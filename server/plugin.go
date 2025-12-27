@@ -1014,6 +1014,12 @@ func buildMobileRedirectURL(appURL, sessionToken, csrfToken string) string {
 
 func renderMobileLoginPage(w http.ResponseWriter, authorizationURL string) {
 	escapedURL := htmlEscape(authorizationURL)
+	// For JavaScript context, encode as JSON string to prevent injection
+	jsonEncodedURL, err := json.Marshal(authorizationURL)
+	if err != nil {
+		// Fallback to safe empty string if encoding fails
+		jsonEncodedURL = []byte(`""`)
+	}
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	fmt.Fprintf(w, `<!DOCTYPE html>
@@ -1094,18 +1100,22 @@ func renderMobileLoginPage(w http.ResponseWriter, authorizationURL string) {
 	<script>
 		// Attempt to open the authorization URL in a new window
 		// The desktop app should intercept this and open it in the system browser
-		window.onload = function() {
-			// Try to open immediately
-			var opened = window.open('%s', '_blank');
+		(function() {
+			var authUrl = %s;
 			
-			// If popup was blocked or failed, the user can still click the link
-			if (!opened || opened.closed || typeof opened.closed === 'undefined') {
-				console.log('Please click the link to continue authentication');
-			}
-		};
+			window.onload = function() {
+				// Try to open immediately
+				var opened = window.open(authUrl, '_blank');
+				
+				// If popup was blocked or failed, the user can still click the link
+				if (!opened || opened.closed || typeof opened.closed === 'undefined') {
+					console.log('Please click the link to continue authentication');
+				}
+			};
+		})();
 	</script>
 </body>
-</html>`, escapedURL, escapedURL)
+</html>`, escapedURL, string(jsonEncodedURL))
 }
 
 func renderMobileAuthComplete(w http.ResponseWriter, redirectURL string) {
