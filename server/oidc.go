@@ -41,6 +41,9 @@ type authSession struct {
 	Nonce        string `json:"nonce"`
 	CodeVerifier string `json:"code_verifier"`
 	CreatedAt    int64  `json:"created_at"`
+	DesktopToken string `json:"desktop_token,omitempty"`
+	RedirectTo   string `json:"redirect_to,omitempty"`
+	IsMobile     bool   `json:"is_mobile,omitempty"`
 }
 
 func (s *authSession) isExpired(now time.Time) bool {
