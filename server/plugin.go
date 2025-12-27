@@ -147,7 +147,9 @@ func (p *Plugin) getRouter() http.Handler {
 		mux.HandleFunc("/", p.handleLanding)
 		mux.HandleFunc("/health", p.handleHealth)
 		mux.HandleFunc("/login", p.handleLogin)
+		mux.HandleFunc("/login/mobile", p.handleMobileLogin)
 		mux.HandleFunc("/callback", p.handleCallback)
+		mux.HandleFunc("/callback/mobile", p.handleMobileCallback)
 		mux.HandleFunc("/logout", p.handleLogout)
 		p.router = mux
 	}
@@ -375,10 +377,21 @@ func (p *Plugin) handleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Check if request is from desktop/mobile app based on User-Agent
+	userAgent := r.Header.Get("User-Agent")
+	isDesktop := isDesktopOrMobileApp(userAgent)
+	
+	// Check for optional redirect_to parameter (deeplink for desktop apps)
+	redirectTo := r.URL.Query().Get("redirect_to")
+
+	p.API.LogDebug("login request received", "is_desktop", isDesktop, "user_agent", userAgent, "redirect_to", redirectTo)
+
 	session := &authSession{
 		Nonce:        nonce,
 		CodeVerifier: codeVerifier,
 		CreatedAt:    time.Now().Unix(),
+		IsDesktopApp: isDesktop,
+		RedirectTo:   redirectTo,
 	}
 	if err := p.saveAuthSession(state, session); err != nil {
 		p.API.LogError("failed to persist auth session", "error", err.Error())
@@ -386,6 +399,17 @@ func (p *Plugin) handleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	p.API.LogDebug("auth session saved", "state", state, "is_desktop_app", session.IsDesktopApp)
+
+	if isDesktop {
+		// Desktop/mobile apps need HTML page with window.open()
+		// They intercept window.open() and open in external browser
+		p.API.LogDebug("rendering login page for desktop/mobile app", "state", state, "user_agent", userAgent)
+		renderMobileLoginPage(w, authorizeURL)
+		return
+	}
+
+	// For web browsers, do standard HTTP redirect
 	p.API.LogDebug("redirecting to OIDC provider", "state", state)
 	http.Redirect(w, r, authorizeURL, http.StatusFound)
 }
@@ -409,6 +433,152 @@ func (p *Plugin) handleCallback(w http.ResponseWriter, r *http.Request) {
 	session, err := p.consumeAuthSession(state)
 	if err != nil {
 		p.API.LogError("failed to load auth session", "state", state, "error", err.Error())
+		p.writeFriendlyError(w, http.StatusInternalServerError, "Unable to validate login", "We couldn't validate your login session. Please try again.")
+		return
+	}
+
+	if session == nil {
+		p.writeFriendlyError(w, http.StatusGone, "Login link expired", "Your login session has expired. Please launch the login flow again.")
+		return
+	}
+
+	// Log session details for debugging
+	p.API.LogDebug("callback received", "state", state, "is_desktop_app", session.IsDesktopApp, "user_agent", r.Header.Get("User-Agent"))
+
+	ctx, cancel := context.WithTimeout(context.Background(), tokenExchangeTimeout)
+	defer cancel()
+
+	tokens, err := p.exchangeCode(ctx, cfg, metadata, code, session.CodeVerifier)
+	if err != nil {
+		p.API.LogError("token exchange failed", "state", state, "error", err.Error())
+		p.writeFriendlyError(w, http.StatusBadGateway, "Unable to complete login", "We couldn't exchange the authorization code with the identity provider. Please try again.")
+		return
+	}
+
+	idTokenClaims, err := p.verifyIDToken(ctx, provider, cfg, tokens.IDToken, session.Nonce)
+	if err != nil {
+		p.API.LogError("id_token verification failed", "state", state, "error", err.Error())
+		p.writeFriendlyError(w, http.StatusUnauthorized, "Unable to verify identity", "We could not verify the identity information from the provider. Please try again.")
+		return
+	}
+
+	profile := buildUserProfile(idTokenClaims, cfg.ClientID)
+	p.logClaimsSnapshot(idTokenClaims, cfg.ClientID, profile.SystemAdmin)
+	user, err := p.provisionUser(profile)
+	if err != nil {
+		p.API.LogError("failed to provision user", "state", state, "error", err.Error())
+		if status, title, message, handled := friendlyProvisioningError(err); handled {
+			p.writeFriendlyError(w, status, title, message)
+		} else {
+			p.writeFriendlyError(w, http.StatusInternalServerError, "We couldn't finish signing you in", "Mattermost was unable to create or update your account. Please try again or contact your system administrator.")
+		}
+		return
+	}
+
+	createdSession, err := p.completeLogin(w, r, user, cfg, session.IsDesktopApp, session.RedirectTo)
+	if err != nil {
+		p.API.LogError("failed to complete login", "state", state, "error", err.Error())
+		p.writeFriendlyError(w, http.StatusInternalServerError, "Unable to finish signing you in", "We couldn't establish a Mattermost session. Please try again.")
+		return
+	}
+
+	if err := p.persistSessionTokens(createdSession, tokens, cfg); err != nil {
+		p.API.LogWarn("failed to persist session tokens", "state", state, "error", err.Error())
+	}
+
+	p.API.LogDebug("authentication successful", "sub", profile.Subject, "user_id", user.Id)
+}
+
+func (p *Plugin) handleMobileLogin(w http.ResponseWriter, r *http.Request) {
+	cfg := p.getConfiguration()
+	metadata := p.getMetadata()
+	if metadata == nil {
+		p.writeFriendlyError(w, http.StatusServiceUnavailable, "Identity provider unavailable", "We can't reach the configured OIDC metadata right now. Please try again in a moment.")
+		return
+	}
+
+	redirectTo := r.URL.Query().Get("redirect_to")
+	if redirectTo == "" {
+		p.writeFriendlyError(w, http.StatusBadRequest, "Missing redirect URL", "The mobile/desktop login requires a redirect_to parameter with your app's custom protocol URL (e.g., mattermost://).")
+		return
+	}
+
+	if !isValidMobileRedirectURL(redirectTo) {
+		p.writeFriendlyError(w, http.StatusBadRequest, "Invalid redirect URL", "The redirect_to parameter must use a valid custom protocol scheme (e.g., mattermost://).")
+		return
+	}
+
+	state, err := generateRandomString(stateBytes)
+	if err != nil {
+		p.API.LogError("failed to generate state", "error", err.Error())
+		p.writeFriendlyError(w, http.StatusInternalServerError, "Unable to start login", "We hit an unexpected error while preparing the login flow. Please try again.")
+		return
+	}
+
+	nonce, err := generateRandomString(nonceBytes)
+	if err != nil {
+		p.API.LogError("failed to generate nonce", "error", err.Error())
+		p.writeFriendlyError(w, http.StatusInternalServerError, "Unable to start login", "We hit an unexpected error while preparing the login flow. Please try again.")
+		return
+	}
+
+	codeVerifier, err := generateRandomString(pkceVerifierBytes)
+	if err != nil {
+		p.API.LogError("failed to generate code verifier", "error", err.Error())
+		p.writeFriendlyError(w, http.StatusInternalServerError, "Unable to start login", "We hit an unexpected error while preparing the login flow. Please try again.")
+		return
+	}
+
+	codeChallenge := pkceChallenge(codeVerifier)
+
+	// Use the mobile callback URL for redirect
+	mobileCfg := cfg.Clone()
+	mobileCfg.RedirectURL = buildMobileCallbackURL(cfg.RedirectURL)
+
+	authorizeURL, err := buildAuthorizeURL(metadata.AuthorizationEndpoint, mobileCfg, state, nonce, codeChallenge)
+	if err != nil {
+		p.API.LogError("failed to build authorize URL", "error", err.Error())
+		p.writeFriendlyError(w, http.StatusInternalServerError, "Unable to start login", "We couldn't build a valid authorization request. Please try again.")
+		return
+	}
+
+	session := &mobileAuthSession{
+		authSession: authSession{
+			Nonce:        nonce,
+			CodeVerifier: codeVerifier,
+			CreatedAt:    time.Now().Unix(),
+		},
+		RedirectTo: redirectTo,
+	}
+	if err := p.saveMobileAuthSession(state, session); err != nil {
+		p.API.LogError("failed to persist mobile auth session", "error", err.Error())
+		p.writeFriendlyError(w, http.StatusInternalServerError, "Unable to start login", "We couldn't store the temporary login session. Please try again.")
+		return
+	}
+
+	p.API.LogDebug("rendering mobile login page with authorization URL", "state", state, "redirect_to", redirectTo)
+	renderMobileLoginPage(w, authorizeURL)
+}
+
+func (p *Plugin) handleMobileCallback(w http.ResponseWriter, r *http.Request) {
+	state := r.URL.Query().Get("state")
+	code := r.URL.Query().Get("code")
+	if state == "" || code == "" {
+		p.writeFriendlyError(w, http.StatusBadRequest, "Invalid login response", "We could not validate the parameters returned from the identity provider. Please start a new login from your application.")
+		return
+	}
+
+	cfg := p.getConfiguration()
+	metadata := p.getMetadata()
+	provider := p.getProvider()
+	if metadata == nil || provider == nil {
+		p.writeFriendlyError(w, http.StatusServiceUnavailable, "Identity provider unavailable", "We can't reach the configured OIDC metadata right now. Please try again in a moment.")
+		return
+	}
+
+	session, err := p.consumeMobileAuthSession(state)
+	if err != nil {
+		p.API.LogError("failed to load mobile auth session", "state", state, "error", err.Error())
 		p.writeFriendlyError(w, http.StatusInternalServerError, "Unable to validate login", "We couldn't validate your login session. Please try again.")
 		return
 	}
@@ -448,18 +618,35 @@ func (p *Plugin) handleCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	createdSession, err := p.completeLogin(w, r, user, cfg)
-	if err != nil {
-		p.API.LogError("failed to complete login", "state", state, "error", err.Error())
+	// Create a session for the user
+	mmSession := &model.Session{UserId: user.Id, Roles: strings.TrimSpace(user.Roles)}
+	if mmSession.Roles == "" {
+		mmSession.Roles = model.SystemUserRoleId
+	}
+	mmSession.PreSave()
+	csrfToken := mmSession.GenerateCSRF()
+	mmSession.Id = ""
+
+	createdSession, appErr := p.API.CreateSession(mmSession)
+	if appErr != nil {
+		p.API.LogError("failed to create session", "state", state, "error", appErr.Error())
 		p.writeFriendlyError(w, http.StatusInternalServerError, "Unable to finish signing you in", "We couldn't establish a Mattermost session. Please try again.")
 		return
+	}
+
+	if csrfToken == "" {
+		csrfToken = createdSession.GetCSRF()
 	}
 
 	if err := p.persistSessionTokens(createdSession, tokens, cfg); err != nil {
 		p.API.LogWarn("failed to persist session tokens", "state", state, "error", err.Error())
 	}
 
-	p.API.LogDebug("authentication successful", "sub", profile.Subject, "user_id", user.Id)
+	p.API.LogDebug("mobile authentication successful", "sub", profile.Subject, "user_id", user.Id, "redirect_to", session.RedirectTo)
+
+	// Render the mobile auth complete page with redirect
+	redirectURL := buildMobileRedirectURL(session.RedirectTo, createdSession.Token, csrfToken)
+	renderMobileAuthComplete(w, redirectURL)
 }
 
 func (p *Plugin) handleLogout(w http.ResponseWriter, r *http.Request) {
@@ -568,7 +755,7 @@ func flattenResourceAccess(access map[string]clientRoleMapping) map[string][]str
 	return result
 }
 
-func (p *Plugin) completeLogin(w http.ResponseWriter, r *http.Request, user *model.User, cfg *Configuration) (*model.Session, error) {
+func (p *Plugin) completeLogin(w http.ResponseWriter, r *http.Request, user *model.User, cfg *Configuration, isDesktopApp bool, redirectTo string) (*model.Session, error) {
 	session := &model.Session{UserId: user.Id, Roles: strings.TrimSpace(user.Roles)}
 	if session.Roles == "" {
 		session.Roles = model.SystemUserRoleId
@@ -590,6 +777,27 @@ func (p *Plugin) completeLogin(w http.ResponseWriter, r *http.Request, user *mod
 		return nil, err
 	}
 
+	// For desktop/mobile apps with a custom protocol redirect URL, redirect to it
+	if isDesktopApp && redirectTo != "" && isCustomProtocolURL(redirectTo) {
+		// Build deeplink with session tokens
+		deeplinkURL, err := buildDeeplinkWithTokens(redirectTo, created.Token, csrfToken)
+		if err != nil {
+			p.API.LogError("failed to build deeplink URL", "error", err.Error())
+			renderDesktopAuthComplete(w)
+			return created, nil
+		}
+		p.API.LogDebug("redirecting to deeplink", "url", deeplinkURL)
+		renderDeeplinkRedirect(w, deeplinkURL)
+		return created, nil
+	}
+
+	// For desktop/mobile apps without deeplink, render completion page
+	if isDesktopApp {
+		renderDesktopAuthComplete(w)
+		return created, nil
+	}
+
+	// For web browsers, redirect to homepage
 	redirectTarget := postLoginRedirect(cfg, p.API.GetConfig())
 	http.Redirect(w, r, redirectTarget, http.StatusFound)
 	return created, nil
@@ -792,4 +1000,373 @@ func requestIsSecure(r *http.Request, cfg *Configuration) bool {
 
 func htmlEscape(value string) string {
 	return template.HTMLEscapeString(value)
+}
+
+// Mobile/Desktop authentication helpers
+
+func isValidMobileRedirectURL(redirectURL string) bool {
+	if strings.TrimSpace(redirectURL) == "" {
+		return false
+	}
+
+	parsed, err := url.Parse(redirectURL)
+	if err != nil {
+		return false
+	}
+
+	// Check for custom protocol schemes commonly used by mobile/desktop apps
+	// Common schemes: mattermost://, mattermostdesktop://, etc.
+	scheme := strings.ToLower(parsed.Scheme)
+	if scheme == "" || scheme == "http" || scheme == "https" {
+		return false
+	}
+
+	// Must have a valid custom scheme (e.g., mattermost://)
+	return len(scheme) > 0
+}
+
+// isDesktopOrMobileApp detects if the request is from a desktop or mobile app
+// based on the User-Agent header. Desktop apps like Mattermost Desktop include
+// "Electron" and "Mattermost" in their User-Agent.
+func isDesktopOrMobileApp(userAgent string) bool {
+	ua := strings.ToLower(userAgent)
+	// Check for Electron (used by Mattermost Desktop)
+	if strings.Contains(ua, "electron") {
+		return true
+	}
+	// Check for Mattermost desktop app signature
+	if strings.Contains(ua, "mattermost") && !strings.Contains(ua, "bot") {
+		// Mattermost Desktop includes "Mattermost/x.y.z" in User-Agent
+		// Web browsers don't include this
+		return strings.Contains(userAgent, "Mattermost/")
+	}
+	return false
+}
+
+func buildMobileCallbackURL(baseRedirectURL string) string {
+	parsed, err := url.Parse(baseRedirectURL)
+	if err != nil {
+		// If parsing fails, this is likely not a valid URL,
+		// but we still try to append the expected path
+		return baseRedirectURL + "/callback/mobile"
+	}
+
+	// Change /callback to /callback/mobile
+	if strings.HasSuffix(parsed.Path, "/callback") {
+		parsed.Path = parsed.Path + "/mobile"
+	} else {
+		// Construct path without using path.Join to avoid unwanted path cleaning
+		parsed.Path = strings.TrimRight(parsed.Path, "/") + "/callback/mobile"
+	}
+
+	return parsed.String()
+}
+
+func buildMobileRedirectURL(appURL, sessionToken, csrfToken string) string {
+	parsed, err := url.Parse(appURL)
+	if err != nil {
+		return appURL
+	}
+
+	q := parsed.Query()
+	q.Set(model.SessionCookieToken, sessionToken)
+	q.Set(model.SessionCookieCsrf, csrfToken)
+	parsed.RawQuery = q.Encode()
+
+	return parsed.String()
+}
+
+// isCustomProtocolURL checks if the URL uses a custom protocol (not http/https).
+// This is used to validate deeplinks for desktop/mobile apps.
+func isCustomProtocolURL(rawURL string) bool {
+	parsed, err := url.Parse(rawURL)
+	if err != nil {
+		return false
+	}
+	scheme := strings.ToLower(parsed.Scheme)
+	return scheme != "" && scheme != "http" && scheme != "https"
+}
+
+// buildDeeplinkWithTokens creates a deeplink URL with session tokens as query parameters.
+func buildDeeplinkWithTokens(deeplinkURL, sessionToken, csrfToken string) (string, error) {
+	parsed, err := url.Parse(deeplinkURL)
+	if err != nil {
+		return "", fmt.Errorf("parse deeplink URL: %w", err)
+	}
+
+	q := parsed.Query()
+	q.Set(model.SessionCookieToken, sessionToken)
+	q.Set(model.SessionCookieCsrf, csrfToken)
+	parsed.RawQuery = q.Encode()
+
+	return parsed.String(), nil
+}
+
+// renderDeeplinkRedirect renders an HTML page that automatically redirects to a deeplink URL.
+// This is used for desktop app authentication with custom protocol handlers.
+func renderDeeplinkRedirect(w http.ResponseWriter, deeplinkURL string) {
+	renderMobileAuthComplete(w, deeplinkURL)
+}
+
+func renderMobileLoginPage(w http.ResponseWriter, authorizationURL string) {
+	escapedURL := htmlEscape(authorizationURL)
+	// For JavaScript context, encode as JSON string to prevent injection
+	jsonEncodedURL, err := json.Marshal(authorizationURL)
+	if err != nil {
+		// Fallback to safe empty string if encoding fails
+		jsonEncodedURL = []byte(`""`)
+	}
+
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	fmt.Fprintf(w, `<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=1.0, user-scalable=yes, viewport-fit=cover">
+	<title>Opening Browser for Authentication</title>
+	<style>
+		body {
+			color: #333;
+			background-color: #fff;
+			font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+			margin: 0;
+			padding: 2rem;
+			text-align: center;
+		}
+		.container {
+			max-width: 600px;
+			margin: 4rem auto;
+			padding: 2rem;
+		}
+		svg {
+			width: 64px;
+			height: 64px;
+			fill: #38bdf8;
+			margin-bottom: 1rem;
+		}
+		h1 {
+			font-size: 1.75rem;
+			margin: 1rem 0;
+			color: #333;
+		}
+		p {
+			line-height: 1.6;
+			margin: 1rem 0;
+			color: #666;
+		}
+		a {
+			display: inline-block;
+			margin-top: 1rem;
+			padding: 0.75rem 1.5rem;
+			background: #38bdf8;
+			color: #fff;
+			text-decoration: none;
+			border-radius: 999px;
+			font-weight: 600;
+		}
+		a:hover {
+			opacity: 0.9;
+			transform: translateY(-1px);
+		}
+		.notice {
+			margin-top: 2rem;
+			padding: 1rem;
+			background: #f0f9ff;
+			border-left: 3px solid #38bdf8;
+			border-radius: 8px;
+			color: #0369a1;
+			font-size: 0.9rem;
+		}
+	</style>
+</head>
+<body>
+	<div class="container">
+		<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+			<path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path>
+			<polyline points="15 3 21 3 21 9"></polyline>
+			<line x1="10" y1="14" x2="21" y2="3"></line>
+		</svg>
+		<h1>Opening Browser</h1>
+		<p>Your default browser should open automatically for authentication.</p>
+		<p><a href="%s" target="_blank" rel="noopener noreferrer">Click here to open browser manually</a></p>
+		<div class="notice">
+			After authenticating in your browser, you will be redirected back to the application automatically.
+		</div>
+	</div>
+	<script>
+		// Attempt to open the authorization URL in a new window
+		// The desktop app should intercept this and open it in the system browser
+		(function() {
+			var authUrl = %s;
+			
+			window.onload = function() {
+				// Try to open immediately
+				var opened = window.open(authUrl, '_blank');
+				
+				// If popup was blocked or failed, the user can still click the link
+				if (!opened || opened.closed || typeof opened.closed === 'undefined') {
+					console.log('Please click the link to continue authentication');
+				}
+			};
+		})();
+	</script>
+</body>
+</html>`, escapedURL, string(jsonEncodedURL))
+}
+
+func renderMobileAuthComplete(w http.ResponseWriter, redirectURL string) {
+	escapedLink := htmlEscape(redirectURL)
+
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	fmt.Fprintf(w, `<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=1.0, user-scalable=yes, viewport-fit=cover">
+	<title>Authentication Complete</title>
+	<meta http-equiv="refresh" content="1; url=%s">
+	<style>
+		body {
+			color: #333;
+			background-color: #fff;
+			font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+			margin: 0;
+			padding: 2rem;
+			text-align: center;
+		}
+		.container {
+			max-width: 600px;
+			margin: 4rem auto;
+			padding: 2rem;
+		}
+		svg {
+			width: 64px;
+			height: 64px;
+			fill: #3c763d;
+			margin-bottom: 1rem;
+		}
+		h1 {
+			font-size: 1.75rem;
+			margin: 1rem 0;
+			color: #333;
+		}
+		p {
+			line-height: 1.6;
+			margin: 1rem 0;
+			color: #666;
+		}
+		a {
+			display: inline-block;
+			margin-top: 1rem;
+			padding: 0.75rem 1.5rem;
+			background: #38bdf8;
+			color: #fff;
+			text-decoration: none;
+			border-radius: 999px;
+			font-weight: 600;
+		}
+		a:hover {
+			opacity: 0.9;
+		}
+		#redirecting-message {
+			display: block;
+		}
+		#close-tab-message {
+			display: none;
+		}
+	</style>
+</head>
+<body>
+	<div class="container">
+		<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+			<path d="M504 256c0 136.967-111.033 248-248 248S8 392.967 8 256 119.033 8 256 8s248 111.033 248 248zM227.314 387.314l184-184c6.248-6.248 6.248-16.379 0-22.627l-22.627-22.627c-6.248-6.249-16.379-6.249-22.628 0L216 308.118l-70.059-70.059c-6.248-6.248-16.379-6.248-22.628 0l-22.627 22.627c-6.248 6.248-6.248 16.379 0 22.627l104 104c6.249 6.249 16.379 6.249 22.628.001z"/>
+		</svg>
+		<h1>Authentication Complete</h1>
+		<p id="redirecting-message">Redirecting back to your application...</p>
+		<p id="close-tab-message">You can close this browser window and return to your application.</p>
+		<p><a href="%s">Click here if you are not automatically redirected</a></p>
+	</div>
+	<script>
+		window.onload = function() {
+			setTimeout(function() {
+				document.getElementById('redirecting-message').style.display = 'none';
+				document.getElementById('close-tab-message').style.display = 'block';
+			}, 2000);
+		}
+	</script>
+</body>
+</html>`, escapedLink, escapedLink)
+}
+
+// renderDesktopAuthComplete renders a completion page for desktop app authentication.
+// This is used when desktop apps use the regular /login endpoint (not /login/mobile).
+// The page informs the user that authentication is complete and they can return to the app.
+func renderDesktopAuthComplete(w http.ResponseWriter) {
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	fmt.Fprintf(w, `<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=1.0, user-scalable=yes, viewport-fit=cover">
+	<title>Authentication Complete</title>
+	<style>
+		body {
+			color: #333;
+			background-color: #fff;
+			font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+			margin: 0;
+			padding: 2rem;
+			text-align: center;
+		}
+		.container {
+			max-width: 600px;
+			margin: 4rem auto;
+			padding: 2rem;
+		}
+		svg {
+			width: 64px;
+			height: 64px;
+			fill: #3c763d;
+			margin-bottom: 1rem;
+		}
+		h1 {
+			font-size: 1.75rem;
+			margin: 1rem 0;
+			color: #333;
+		}
+		p {
+			line-height: 1.6;
+			margin: 1rem 0;
+			color: #666;
+		}
+		.notice {
+			margin-top: 2rem;
+			padding: 1rem;
+			background: #f0f9ff;
+			border-left: 3px solid #38bdf8;
+			border-radius: 8px;
+			color: #0369a1;
+			font-size: 0.9rem;
+		}
+	</style>
+</head>
+<body>
+	<div class="container">
+		<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+			<path d="M504 256c0 136.967-111.033 248-248 248S8 392.967 8 256 119.033 8 256 8s248 111.033 248 248zM227.314 387.314l184-184c6.248-6.248 6.248-16.379 0-22.627l-22.627-22.627c-6.248-6.249-16.379-6.249-22.628 0L216 308.118l-70.059-70.059c-6.248-6.248-16.379-6.248-22.628 0l-22.627 22.627c-6.248 6.248-6.248 16.379 0 22.627l104 104c6.249 6.249 16.379 6.249 22.628.001z"/>
+		</svg>
+		<h1>Authentication Complete</h1>
+		<p>You have successfully authenticated.</p>
+		<div class="notice">
+			You can now close this browser window and return to the Mattermost desktop application.
+		</div>
+	</div>
+	<script>
+		// Attempt to close the window (works in some browsers if opened via window.open)
+		setTimeout(function() {
+			window.close();
+		}, 1000);
+	</script>
+</body>
+</html>`)
 }

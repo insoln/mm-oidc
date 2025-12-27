@@ -5,29 +5,60 @@ Securely connect Mattermost Server v9.x+ to modern OpenID Connect providers (Key
 ## What you get
 
 - ✅ Full OIDC login flow with automatic user provisioning and optional admin promotion via client roles.
+- ✅ **Desktop and mobile app support** via external browser authentication with custom protocol handlers.
 - ✅ Ready-made Docker stack (Mattermost + Keycloak + Postgres + proxy) for demos, QA, and CI.
 - ✅ Proxy recipe that rewrites `/login` to the plugin route without breaking API clients.
 - ✅ Playwright regression suite that mirrors the documented installation steps.
 
 ## Choose your deployment path
 
-Use the [User Guide](docs/USER_GUIDE.md) for step-by-step instructions covering two supported scenarios:
+Use the [User Guide](docs/USER_GUIDE.md) for step-by-step instructions covering supported scenarios:
 
 1. **Existing Mattermost instances** – upload `mm-oidc.tar.gz`, configure the IdP client, and validate the flow from the System Console.
 2. **Proxy-assisted login** – drop the maintained Nginx container (or Helm/K8s manifests) in front of Mattermost so `/login` automatically redirects into the plugin without touching server code.
+3. **Desktop/Mobile apps** – use `/plugins/com.mm.oidc/login/mobile?redirect_to=<custom-protocol-url>` to enable external browser authentication with automatic return to the app.
 
 Need the standalone Docker stack or automation workflows? Jump to [docs/DEVELOPER_GUIDE.md](docs/DEVELOPER_GUIDE.md).
 
 ## Quick install checklist (prod environments)
 
 1. Download the latest release artifact from [GitHub Releases](https://github.com/insoln/mm-oidc/releases).
-2. Create a confidential OIDC client in your IdP with redirect `https://<mattermost>/plugins/com.mm.oidc/callback` and the standard profile/email mappers (see [docs/KEYCLOAK_SETUP.md](docs/KEYCLOAK_SETUP.md)).
+2. Create a confidential OIDC client in your IdP with redirect URIs:
+   - `https://<mattermost>/plugins/com.mm.oidc/callback` (for web)
+   - `https://<mattermost>/plugins/com.mm.oidc/callback/mobile` (for desktop/mobile apps)
+   
+   Configure standard profile/email mappers (see [docs/KEYCLOAK_SETUP.md](docs/KEYCLOAK_SETUP.md)).
 3. Upload `mm-oidc.tar.gz` via **System Console → Plugin Management → Plugin Upload**.
 4. Fill out the plugin settings (Issuer URL, Client ID/Secret, Scopes) in **System Console → Plugins → Mattermost OIDC**.
 5. Point users to `/plugins/com.mm.oidc/login` or enable the proxy recipe so `/login` flows through the plugin automatically.
 6. (Optional) Validate with `./scripts/e2e-test.sh` as described in [docs/DEVELOPER_GUIDE.md](docs/DEVELOPER_GUIDE.md) before rolling out broadly.
 
 Details, screenshots, and troubleshooting tips for each step live in [docs/USER_GUIDE.md](docs/USER_GUIDE.md).
+
+## Desktop and Mobile App Authentication
+
+The plugin supports desktop and mobile applications that use custom protocol handlers (e.g., `mattermost://`). To authenticate:
+
+1. **Desktop app initiates login** by opening the browser to:
+   ```
+   https://<mattermost>/plugins/com.mm.oidc/login/mobile?redirect_to=mattermost://auth/complete
+   ```
+
+2. **User authenticates** in their default browser via the OIDC provider.
+
+3. **Browser redirects back** to the desktop app via the custom protocol URL with session tokens:
+   ```
+   mattermost://auth/complete?MMAUTHTOKEN=<token>&MMCSRF=<csrf>
+   ```
+
+4. **Desktop app uses tokens** to establish the Mattermost session.
+
+This flow matches the native Mattermost OAuth implementation and works with any desktop client that:
+- Registers a custom protocol handler (e.g., `mattermost://`, `mattermostdesktop://`)
+- Opens the user's browser for authentication
+- Can receive callback URLs via the protocol handler
+
+See [docs/DESKTOP_APP_AUTH.md](docs/DESKTOP_APP_AUTH.md) for detailed implementation guidelines.
 
 ## Validation via Playwright
 

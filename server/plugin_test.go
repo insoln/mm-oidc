@@ -231,3 +231,56 @@ func cookieByName(cookies []*http.Cookie, name string) *http.Cookie {
 	}
 	return nil
 }
+
+func TestIsDesktopOrMobileApp(t *testing.T) {
+tests := []struct {
+name      string
+userAgent string
+want      bool
+}{
+{
+name:      "Mattermost Desktop with Electron",
+userAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.7339.249 Electron/38.7.2 Safari/537.36 Mattermost/6.0.2",
+want:      true,
+},
+{
+name:      "Electron app",
+userAgent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Electron/25.0.0 Safari/537.36",
+want:      true,
+},
+{
+name:      "Chrome browser",
+userAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+want:      false,
+},
+{
+name:      "Firefox browser",
+userAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/121.0",
+want:      false,
+},
+{
+name:      "Safari browser",
+userAgent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15",
+want:      false,
+},
+{
+name:      "Mattermost bot",
+userAgent: "Mattermost-Bot/1.0",
+want:      false,
+},
+{
+name:      "Empty user agent",
+userAgent: "",
+want:      false,
+},
+}
+
+for _, tt := range tests {
+t.Run(tt.name, func(t *testing.T) {
+got := isDesktopOrMobileApp(tt.userAgent)
+if got != tt.want {
+t.Errorf("isDesktopOrMobileApp(%q) = %v, want %v", tt.userAgent, got, tt.want)
+}
+})
+}
+}

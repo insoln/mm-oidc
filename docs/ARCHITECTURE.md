@@ -13,14 +13,19 @@ This document captures the initial architecture for the Mattermost OIDC plugin. 
 
 ### Server (`server/`)
 
-- **Auth Handlers** – `/login` generates Authorization Code + PKCE redirects (state, nonce, code verifier, KV-backed session storage) while `/callback` exchanges the authorization code for tokens, verifies the `id_token` against the provider's JWKS, and provisions/updates Mattermost users (persisting OIDC subject → user mappings in the plugin KV store). `/logout` revokes the current Mattermost session, deletes the encrypted token bundle, clears cookies, and redirects the browser to the provider's `end_session_endpoint` when exposed.
+- **Auth Handlers** – 
+  - `/login` generates Authorization Code + PKCE redirects (state, nonce, code verifier, KV-backed session storage)
+  - `/login/mobile` handles desktop/mobile app authentication with external browser flow, requiring a `redirect_to` parameter with custom protocol URL
+  - `/callback` exchanges the authorization code for tokens, verifies the `id_token` against the provider's JWKS, and provisions/updates Mattermost users (persisting OIDC subject → user mappings in the plugin KV store)
+  - `/callback/mobile` completes mobile/desktop authentication and renders HTML page that redirects back to the app via custom protocol handler with session tokens
+  - `/logout` revokes the current Mattermost session, deletes the encrypted token bundle, clears cookies, and redirects the browser to the provider's `end_session_endpoint` when exposed
 - **Claim Mapper** – maps ID token / userinfo claims to Mattermost user fields, supports custom transformations and enforcement (e.g., domain allowlists, role mapping).
 - **Provisioning Service** – creates or links Mattermost accounts, handles profile sync, and enforces plugin-specific policies (auto-provision vs. invite-only).
 - **Config Manager** – validates admin-provided settings, caches OIDC discovery metadata, rotates secrets, and integrates with Mattermost's configuration store.
-- **Storage** – leverages Mattermost plugin KV store for ephemeral session data (state, nonce) and encrypted refresh tokens.
+- **Storage** – leverages Mattermost plugin KV store for ephemeral session data (state, nonce) and encrypted refresh tokens. Mobile auth sessions include the custom protocol redirect URL.
 - **Observability Hooks** – structured logging (Zap), metrics (Prometheus counters/histograms), and tracing integration via OpenTelemetry.
 
-The server is written in Go, uses Go modules, and targets Go 1.22 or newer. The implementation includes configuration validation, health/login/callback HTTP endpoints, Authorization Code + PKCE flow, claim mapping, user provisioning, and session management via the plugin KV store.
+The server is written in Go, uses Go modules, and targets Go 1.22 or newer. The implementation includes configuration validation, health/login/callback HTTP endpoints (including mobile variants), Authorization Code + PKCE flow, claim mapping, user provisioning, and session management via the plugin KV store.
 
 ### Webapp (`webapp/`)
 
