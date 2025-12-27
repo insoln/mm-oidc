@@ -5,7 +5,9 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"html/template"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -65,8 +67,12 @@ func (p *Plugin) consumeDesktopToken(token string) (string, error) {
 	}
 
 	// Delete the token immediately after reading
+	tokenPrefix := token
+	if len(tokenPrefix) > 8 {
+		tokenPrefix = token[:8]
+	}
 	if err := p.API.KVDelete(desktopTokenKey(token)); err != nil {
-		p.API.LogWarn("failed to delete desktop token", "token_prefix", token[:8], "error", err.Error())
+		p.API.LogWarn("failed to delete desktop token", "token_prefix", tokenPrefix, "error", err.Error())
 	}
 
 	var record desktopTokenRecord
@@ -98,21 +104,25 @@ func (p *Plugin) handleLoginDesktop(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Build the desktop URL scheme redirect
+	// Build the desktop URL scheme redirect with properly escaped parameters
 	desktopURL := "mattermost://callback"
 	if isDesktopDev {
 		desktopURL = "mattermost-dev://callback"
 	}
 
-	queryParams := fmt.Sprintf("?client_token=%s&server_token=%s", clientToken, serverToken)
+	queryParams := url.Values{}
+	queryParams.Set("client_token", clientToken)
+	queryParams.Set("server_token", serverToken)
 	if redirectTo != "" {
-		queryParams += fmt.Sprintf("&redirect_to=%s", redirectTo)
+		queryParams.Set("redirect_to", redirectTo)
 	}
 
-	fullRedirectURL := desktopURL + queryParams
+	fullRedirectURL := desktopURL + "?" + queryParams.Encode()
 
 	// Render HTML page that triggers desktop app
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	// Use html escaping to safely inject the URL into HTML
+	safeRedirectURL := template.HTMLEscapeString(fullRedirectURL)
 	fmt.Fprintf(w, `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -138,7 +148,7 @@ func (p *Plugin) handleLoginDesktop(w http.ResponseWriter, r *http.Request) {
 		<p>If the app doesn't open automatically, <a href="%s">click here</a>.</p>
 	</main>
 </body>
-</html>`, fullRedirectURL, fullRedirectURL)
+</html>`, safeRedirectURL, safeRedirectURL)
 }
 
 // handleLoginDesktopToken handles the API endpoint for desktop token login
@@ -191,6 +201,8 @@ func (p *Plugin) handleLoginDesktopToken(w http.ResponseWriter, r *http.Request)
 	}
 	session.PreSave()
 	session.GenerateCSRF()
+	// Clear the session ID so that CreateSession generates a new one.
+	// This is necessary because we're creating a new session, not updating an existing one.
 	session.Id = ""
 
 	createdSession, appErr := p.API.CreateSession(session)
