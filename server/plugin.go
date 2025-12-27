@@ -388,6 +388,17 @@ func (p *Plugin) handleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Check if request is from desktop/mobile app based on User-Agent
+	userAgent := r.Header.Get("User-Agent")
+	if isDesktopOrMobileApp(userAgent) {
+		// Desktop/mobile apps need HTML page with window.open()
+		// They intercept window.open() and open in external browser
+		p.API.LogDebug("rendering login page for desktop/mobile app", "state", state, "user_agent", userAgent)
+		renderMobileLoginPage(w, authorizeURL)
+		return
+	}
+
+	// For web browsers, do standard HTTP redirect
 	p.API.LogDebug("redirecting to OIDC provider", "state", state)
 	http.Redirect(w, r, authorizeURL, http.StatusFound)
 }
@@ -977,6 +988,24 @@ func isValidMobileRedirectURL(redirectURL string) bool {
 
 	// Must have a valid custom scheme (e.g., mattermost://)
 	return len(scheme) > 0
+}
+
+// isDesktopOrMobileApp detects if the request is from a desktop or mobile app
+// based on the User-Agent header. Desktop apps like Mattermost Desktop include
+// "Electron" and "Mattermost" in their User-Agent.
+func isDesktopOrMobileApp(userAgent string) bool {
+	ua := strings.ToLower(userAgent)
+	// Check for Electron (used by Mattermost Desktop)
+	if strings.Contains(ua, "electron") {
+		return true
+	}
+	// Check for Mattermost desktop app signature
+	if strings.Contains(ua, "mattermost") && !strings.Contains(ua, "bot") {
+		// Mattermost Desktop includes "Mattermost/x.y.z" in User-Agent
+		// Web browsers don't include this
+		return strings.Contains(userAgent, "Mattermost/")
+	}
+	return false
 }
 
 func buildMobileCallbackURL(baseRedirectURL string) string {
