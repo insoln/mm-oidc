@@ -14,6 +14,7 @@ This document captures the initial architecture for the Mattermost OIDC plugin. 
 ### Server (`server/`)
 
 - **Auth Handlers** – `/login` generates Authorization Code + PKCE redirects (state, nonce, code verifier, KV-backed session storage) while `/callback` exchanges the authorization code for tokens, verifies the `id_token` against the provider's JWKS, and provisions/updates Mattermost users (persisting OIDC subject → user mappings in the plugin KV store). `/logout` revokes the current Mattermost session, deletes the encrypted token bundle, clears cookies, and redirects the browser to the provider's `end_session_endpoint` when exposed.
+- **Desktop Token Flow** – `/login/desktop` and `/login/desktop_token` endpoints support Mattermost desktop application authentication. When `desktop_token` query parameter is present, the callback generates server tokens and redirects to `mattermost://callback` URL scheme instead of setting session cookies. Desktop app exchanges these tokens for a session via the `/login/desktop_token` API endpoint.
 - **Claim Mapper** – maps ID token / userinfo claims to Mattermost user fields, supports custom transformations and enforcement (e.g., domain allowlists, role mapping).
 - **Provisioning Service** – creates or links Mattermost accounts, handles profile sync, and enforces plugin-specific policies (auto-provision vs. invite-only).
 - **Config Manager** – validates admin-provided settings, caches OIDC discovery metadata, rotates secrets, and integrates with Mattermost's configuration store.
@@ -61,6 +62,36 @@ Validation logic ensures:
 - **Error handling** – sanitized messages to clients, detailed traces in server logs.
 - **Logging** – structured JSON logs with correlation IDs for each login attempt.
 - **Dependency hygiene** – Dependabot and `npm audit`/`govulncheck` integrated into CI.
+
+## Desktop Application Support
+
+The plugin supports authentication for Mattermost desktop applications (Windows, macOS, Linux) using a token-based flow compatible with the desktop app protocol:
+
+### Desktop Authentication Flow
+
+1. **Desktop-initiated login**: Desktop app opens `/plugins/com.mm.oidc/login?desktop_token=<client_token>` in the system browser
+2. **OAuth flow**: User completes OIDC authentication with the provider (same as web flow)
+3. **Token generation**: On callback, plugin detects `desktop_token` in session state and:
+   - Generates a server token stored in KV store (3-minute TTL)
+   - Redirects to `/plugins/com.mm.oidc/login/desktop` with both tokens
+4. **Desktop redirect**: Browser auto-redirects to `mattermost://callback?client_token=...&server_token=...`
+5. **Session creation**: Desktop app calls `/plugins/com.mm.oidc/login/desktop_token` API with server token to create session
+
+### Key Implementation Details
+
+- **Desktop token storage**: Server tokens stored in plugin KV store with 3-minute expiration
+- **URL scheme handling**: Uses `mattermost://` protocol for production, `mattermost-dev://` for development builds
+- **Security**: Tokens are single-use and automatically deleted after validation or expiration
+- **Compatibility**: Tested with Mattermost Desktop v5.13+ and Server v10.11+
+
+### Parameter Support
+
+The `/login` endpoint accepts the following query parameters for desktop/mobile flows:
+- `desktop_token` – Token provided by desktop app for session creation
+- `redirect_to` – Optional redirect URL after successful authentication
+- `mobile` – Boolean flag indicating mobile app flow (not yet fully implemented)
+
+This implementation mirrors the desktop authentication flow from [Mattermost Server v10.11](https://github.com/mattermost/mattermost/tree/release-10.11), ensuring compatibility with current desktop app releases.
 
 ## Observability
 

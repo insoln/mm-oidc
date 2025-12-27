@@ -5,6 +5,7 @@ Securely connect Mattermost Server v9.x+ to modern OpenID Connect providers (Key
 ## What you get
 
 - ✅ Full OIDC login flow with automatic user provisioning and optional admin promotion via client roles.
+- ✅ Desktop app support (Windows, macOS, Linux) with token-based authentication flow.
 - ✅ Ready-made Docker stack (Mattermost + Keycloak + Postgres + proxy) for demos, QA, and CI.
 - ✅ Proxy recipe that rewrites `/login` to the plugin route without breaking API clients.
 - ✅ Playwright regression suite that mirrors the documented installation steps.

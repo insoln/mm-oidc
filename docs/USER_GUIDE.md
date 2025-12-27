@@ -52,9 +52,27 @@ Each section contains prerequisites, ordered steps, verification tips, and expli
 
 Automated regression scripts live in [docs/DEVELOPER_GUIDE.md](DEVELOPER_GUIDE.md) if you need repeatable validation for CI.
 
+### Desktop App Authentication
+
+The plugin fully supports Mattermost desktop applications (Windows, macOS, Linux) using a token-based authentication flow:
+
+1. **Configuration**: The desktop app uses your server's configured authentication method automatically.
+2. **Login flow**: When logging in from the desktop app:
+   - The app opens your default browser to the OIDC plugin login page
+   - You complete authentication with your Identity Provider
+   - The browser redirects back to the desktop app using the `mattermost://` URL scheme
+   - The desktop app exchanges tokens to create a session
+3. **Requirements**:
+   - Mattermost Desktop v5.13 or newer
+   - Mattermost Server v9.0 or newer with this plugin installed
+   - Same IdP configuration as web login (no separate setup needed)
+
+If you experience issues with desktop app authentication (e.g., buttons not responding after redirect), ensure you're using a compatible desktop app version and the plugin is properly configured.
+
 ### Known limitations in vanilla Mattermost
 
 - The plugin **cannot override** the stock `/login` and `/logout` routes; only `/plugins/com.mm.oidc/` and `/plugins/com.mm.oidc/login` launch the flow.
+- **Desktop applications**: Mattermost desktop app (v5.13+) is fully supported via the desktop token flow. Desktop app will automatically use the plugin for authentication when configured.
 - Mobile apps and legacy password clients must continue using the built-in authentication methods until you add a proxy rule or custom UI entry point.
 - Server metrics/logging already redact secrets, but Mattermost still displays raw IdP URLs inside the System Console; secure that interface appropriately.
 
