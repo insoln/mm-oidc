@@ -377,10 +377,15 @@ func (p *Plugin) handleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Check if request is from desktop/mobile app based on User-Agent
+	userAgent := r.Header.Get("User-Agent")
+	isDesktop := isDesktopOrMobileApp(userAgent)
+
 	session := &authSession{
 		Nonce:        nonce,
 		CodeVerifier: codeVerifier,
 		CreatedAt:    time.Now().Unix(),
+		IsDesktopApp: isDesktop,
 	}
 	if err := p.saveAuthSession(state, session); err != nil {
 		p.API.LogError("failed to persist auth session", "error", err.Error())
@@ -388,9 +393,7 @@ func (p *Plugin) handleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Check if request is from desktop/mobile app based on User-Agent
-	userAgent := r.Header.Get("User-Agent")
-	if isDesktopOrMobileApp(userAgent) {
+	if isDesktop {
 		// Desktop/mobile apps need HTML page with window.open()
 		// They intercept window.open() and open in external browser
 		p.API.LogDebug("rendering login page for desktop/mobile app", "state", state, "user_agent", userAgent)
@@ -461,7 +464,7 @@ func (p *Plugin) handleCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	createdSession, err := p.completeLogin(w, r, user, cfg)
+	createdSession, err := p.completeLogin(w, r, user, cfg, session.IsDesktopApp)
 	if err != nil {
 		p.API.LogError("failed to complete login", "state", state, "error", err.Error())
 		p.writeFriendlyError(w, http.StatusInternalServerError, "Unable to finish signing you in", "We couldn't establish a Mattermost session. Please try again.")
@@ -741,7 +744,7 @@ func flattenResourceAccess(access map[string]clientRoleMapping) map[string][]str
 	return result
 }
 
-func (p *Plugin) completeLogin(w http.ResponseWriter, r *http.Request, user *model.User, cfg *Configuration) (*model.Session, error) {
+func (p *Plugin) completeLogin(w http.ResponseWriter, r *http.Request, user *model.User, cfg *Configuration, isDesktopApp bool) (*model.Session, error) {
 	session := &model.Session{UserId: user.Id, Roles: strings.TrimSpace(user.Roles)}
 	if session.Roles == "" {
 		session.Roles = model.SystemUserRoleId
@@ -763,6 +766,13 @@ func (p *Plugin) completeLogin(w http.ResponseWriter, r *http.Request, user *mod
 		return nil, err
 	}
 
+	// For desktop/mobile apps, render completion page instead of redirecting
+	if isDesktopApp {
+		renderDesktopAuthComplete(w)
+		return created, nil
+	}
+
+	// For web browsers, redirect to homepage
 	redirectTarget := postLoginRedirect(cfg, p.API.GetConfig())
 	http.Redirect(w, r, redirectTarget, http.StatusFound)
 	return created, nil
@@ -1229,4 +1239,77 @@ func renderMobileAuthComplete(w http.ResponseWriter, redirectURL string) {
 	</script>
 </body>
 </html>`, escapedLink, escapedLink)
+}
+
+// renderDesktopAuthComplete renders a completion page for desktop app authentication.
+// This is used when desktop apps use the regular /login endpoint (not /login/mobile).
+// The page informs the user that authentication is complete and they can return to the app.
+func renderDesktopAuthComplete(w http.ResponseWriter) {
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	fmt.Fprintf(w, `<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=1.0, user-scalable=yes, viewport-fit=cover">
+	<title>Authentication Complete</title>
+	<style>
+		body {
+			color: #333;
+			background-color: #fff;
+			font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+			margin: 0;
+			padding: 2rem;
+			text-align: center;
+		}
+		.container {
+			max-width: 600px;
+			margin: 4rem auto;
+			padding: 2rem;
+		}
+		svg {
+			width: 64px;
+			height: 64px;
+			fill: #3c763d;
+			margin-bottom: 1rem;
+		}
+		h1 {
+			font-size: 1.75rem;
+			margin: 1rem 0;
+			color: #333;
+		}
+		p {
+			line-height: 1.6;
+			margin: 1rem 0;
+			color: #666;
+		}
+		.notice {
+			margin-top: 2rem;
+			padding: 1rem;
+			background: #f0f9ff;
+			border-left: 3px solid #38bdf8;
+			border-radius: 8px;
+			color: #0369a1;
+			font-size: 0.9rem;
+		}
+	</style>
+</head>
+<body>
+	<div class="container">
+		<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+			<path d="M504 256c0 136.967-111.033 248-248 248S8 392.967 8 256 119.033 8 256 8s248 111.033 248 248zM227.314 387.314l184-184c6.248-6.248 6.248-16.379 0-22.627l-22.627-22.627c-6.248-6.249-16.379-6.249-22.628 0L216 308.118l-70.059-70.059c-6.248-6.248-16.379-6.248-22.628 0l-22.627 22.627c-6.248 6.248-6.248 16.379 0 22.627l104 104c6.249 6.249 16.379 6.249 22.628.001z"/>
+		</svg>
+		<h1>Authentication Complete</h1>
+		<p>You have successfully authenticated.</p>
+		<div class="notice">
+			You can now close this browser window and return to the Mattermost desktop application.
+		</div>
+	</div>
+	<script>
+		// Attempt to close the window (works in some browsers if opened via window.open)
+		setTimeout(function() {
+			window.close();
+		}, 1000);
+	</script>
+</body>
+</html>`)
 }
