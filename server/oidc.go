@@ -42,6 +42,7 @@ type authSession struct {
 	CodeVerifier string `json:"code_verifier"`
 	CreatedAt    int64  `json:"created_at"`
 	IsDesktopApp bool   `json:"is_desktop_app"` // Track if login was initiated from desktop/mobile app
+	RedirectTo   string `json:"redirect_to"`    // Optional deeplink URL to redirect back to desktop app
 }
 
 // mobileAuthSession extends authSession with mobile/desktop specific fields.

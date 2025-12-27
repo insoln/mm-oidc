@@ -380,14 +380,18 @@ func (p *Plugin) handleLogin(w http.ResponseWriter, r *http.Request) {
 	// Check if request is from desktop/mobile app based on User-Agent
 	userAgent := r.Header.Get("User-Agent")
 	isDesktop := isDesktopOrMobileApp(userAgent)
+	
+	// Check for optional redirect_to parameter (deeplink for desktop apps)
+	redirectTo := r.URL.Query().Get("redirect_to")
 
-	p.API.LogDebug("login request received", "is_desktop", isDesktop, "user_agent", userAgent)
+	p.API.LogDebug("login request received", "is_desktop", isDesktop, "user_agent", userAgent, "redirect_to", redirectTo)
 
 	session := &authSession{
 		Nonce:        nonce,
 		CodeVerifier: codeVerifier,
 		CreatedAt:    time.Now().Unix(),
 		IsDesktopApp: isDesktop,
+		RedirectTo:   redirectTo,
 	}
 	if err := p.saveAuthSession(state, session); err != nil {
 		p.API.LogError("failed to persist auth session", "error", err.Error())
@@ -471,7 +475,7 @@ func (p *Plugin) handleCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	createdSession, err := p.completeLogin(w, r, user, cfg, session.IsDesktopApp)
+	createdSession, err := p.completeLogin(w, r, user, cfg, session.IsDesktopApp, session.RedirectTo)
 	if err != nil {
 		p.API.LogError("failed to complete login", "state", state, "error", err.Error())
 		p.writeFriendlyError(w, http.StatusInternalServerError, "Unable to finish signing you in", "We couldn't establish a Mattermost session. Please try again.")
@@ -751,7 +755,7 @@ func flattenResourceAccess(access map[string]clientRoleMapping) map[string][]str
 	return result
 }
 
-func (p *Plugin) completeLogin(w http.ResponseWriter, r *http.Request, user *model.User, cfg *Configuration, isDesktopApp bool) (*model.Session, error) {
+func (p *Plugin) completeLogin(w http.ResponseWriter, r *http.Request, user *model.User, cfg *Configuration, isDesktopApp bool, redirectTo string) (*model.Session, error) {
 	session := &model.Session{UserId: user.Id, Roles: strings.TrimSpace(user.Roles)}
 	if session.Roles == "" {
 		session.Roles = model.SystemUserRoleId
@@ -773,7 +777,21 @@ func (p *Plugin) completeLogin(w http.ResponseWriter, r *http.Request, user *mod
 		return nil, err
 	}
 
-	// For desktop/mobile apps, render completion page instead of redirecting
+	// For desktop/mobile apps with a custom protocol redirect URL, redirect to it
+	if isDesktopApp && redirectTo != "" && isCustomProtocolURL(redirectTo) {
+		// Build deeplink with session tokens
+		deeplinkURL, err := buildDeeplinkWithTokens(redirectTo, created.Token, csrfToken)
+		if err != nil {
+			p.API.LogError("failed to build deeplink URL", "error", err.Error())
+			renderDesktopAuthComplete(w)
+			return created, nil
+		}
+		p.API.LogDebug("redirecting to deeplink", "url", deeplinkURL)
+		renderDeeplinkRedirect(w, deeplinkURL)
+		return created, nil
+	}
+
+	// For desktop/mobile apps without deeplink, render completion page
 	if isDesktopApp {
 		renderDesktopAuthComplete(w)
 		return created, nil
@@ -1056,6 +1074,38 @@ func buildMobileRedirectURL(appURL, sessionToken, csrfToken string) string {
 	parsed.RawQuery = q.Encode()
 
 	return parsed.String()
+}
+
+// isCustomProtocolURL checks if the URL uses a custom protocol (not http/https).
+// This is used to validate deeplinks for desktop/mobile apps.
+func isCustomProtocolURL(rawURL string) bool {
+	parsed, err := url.Parse(rawURL)
+	if err != nil {
+		return false
+	}
+	scheme := strings.ToLower(parsed.Scheme)
+	return scheme != "" && scheme != "http" && scheme != "https"
+}
+
+// buildDeeplinkWithTokens creates a deeplink URL with session tokens as query parameters.
+func buildDeeplinkWithTokens(deeplinkURL, sessionToken, csrfToken string) (string, error) {
+	parsed, err := url.Parse(deeplinkURL)
+	if err != nil {
+		return "", fmt.Errorf("parse deeplink URL: %w", err)
+	}
+
+	q := parsed.Query()
+	q.Set(model.SessionCookieToken, sessionToken)
+	q.Set(model.SessionCookieCsrf, csrfToken)
+	parsed.RawQuery = q.Encode()
+
+	return parsed.String(), nil
+}
+
+// renderDeeplinkRedirect renders an HTML page that automatically redirects to a deeplink URL.
+// This is used for desktop app authentication with custom protocol handlers.
+func renderDeeplinkRedirect(w http.ResponseWriter, deeplinkURL string) {
+	renderMobileAuthComplete(w, deeplinkURL)
 }
 
 func renderMobileLoginPage(w http.ResponseWriter, authorizationURL string) {
