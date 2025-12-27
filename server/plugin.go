@@ -1224,6 +1224,7 @@ func renderMobileAuthComplete(w http.ResponseWriter, redirectURL string) {
 	<meta charset="utf-8">
 	<meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=1.0, user-scalable=yes, viewport-fit=cover">
 	<title>Authentication Complete</title>
+	<meta http-equiv="refresh" content="0; url=%s">
 	<style>
 		body {
 			color: #333;
@@ -1274,7 +1275,6 @@ func renderMobileAuthComplete(w http.ResponseWriter, redirectURL string) {
 			display: none;
 		}
 	</style>
-	<meta http-equiv="refresh" content="2; url=%s">
 </head>
 <body>
 	<div class="container">
