@@ -381,6 +381,8 @@ func (p *Plugin) handleLogin(w http.ResponseWriter, r *http.Request) {
 	userAgent := r.Header.Get("User-Agent")
 	isDesktop := isDesktopOrMobileApp(userAgent)
 
+	p.API.LogDebug("login request received", "is_desktop", isDesktop, "user_agent", userAgent)
+
 	session := &authSession{
 		Nonce:        nonce,
 		CodeVerifier: codeVerifier,
@@ -392,6 +394,8 @@ func (p *Plugin) handleLogin(w http.ResponseWriter, r *http.Request) {
 		p.writeFriendlyError(w, http.StatusInternalServerError, "Unable to start login", "We couldn't store the temporary login session. Please try again.")
 		return
 	}
+
+	p.API.LogDebug("auth session saved", "state", state, "is_desktop_app", session.IsDesktopApp)
 
 	if isDesktop {
 		// Desktop/mobile apps need HTML page with window.open()
@@ -433,6 +437,9 @@ func (p *Plugin) handleCallback(w http.ResponseWriter, r *http.Request) {
 		p.writeFriendlyError(w, http.StatusGone, "Login link expired", "Your login session has expired. Please launch the login flow again.")
 		return
 	}
+
+	// Log session details for debugging
+	p.API.LogDebug("callback received", "state", state, "is_desktop_app", session.IsDesktopApp, "user_agent", r.Header.Get("User-Agent"))
 
 	ctx, cancel := context.WithTimeout(context.Background(), tokenExchangeTimeout)
 	defer cancel()
