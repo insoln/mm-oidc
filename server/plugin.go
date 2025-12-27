@@ -149,6 +149,8 @@ func (p *Plugin) getRouter() http.Handler {
 		mux.HandleFunc("/login", p.handleLogin)
 		mux.HandleFunc("/callback", p.handleCallback)
 		mux.HandleFunc("/logout", p.handleLogout)
+		mux.HandleFunc("/login/desktop", p.handleLoginDesktop)
+		mux.HandleFunc("/login/desktop_token", p.handleLoginDesktopToken)
 		p.router = mux
 	}
 
@@ -346,6 +348,11 @@ func (p *Plugin) handleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Extract desktop_token, redirect_to, and mobile parameters from query string
+	desktopToken := strings.TrimSpace(r.URL.Query().Get("desktop_token"))
+	redirectTo := strings.TrimSpace(r.URL.Query().Get("redirect_to"))
+	isMobile := r.URL.Query().Get("mobile") == "true"
+
 	state, err := generateRandomString(stateBytes)
 	if err != nil {
 		p.API.LogError("failed to generate state", "error", err.Error())
@@ -379,6 +386,9 @@ func (p *Plugin) handleLogin(w http.ResponseWriter, r *http.Request) {
 		Nonce:        nonce,
 		CodeVerifier: codeVerifier,
 		CreatedAt:    time.Now().Unix(),
+		DesktopToken: desktopToken,
+		RedirectTo:   redirectTo,
+		IsMobile:     isMobile,
 	}
 	if err := p.saveAuthSession(state, session); err != nil {
 		p.API.LogError("failed to persist auth session", "error", err.Error())
@@ -386,7 +396,7 @@ func (p *Plugin) handleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	p.API.LogDebug("redirecting to OIDC provider", "state", state)
+	p.API.LogDebug("redirecting to OIDC provider", "state", state, "desktop_token", desktopToken != "", "is_mobile", isMobile)
 	http.Redirect(w, r, authorizeURL, http.StatusFound)
 }
 
@@ -448,6 +458,48 @@ func (p *Plugin) handleCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Handle desktop token flow
+	if session.DesktopToken != "" {
+		serverToken, err := generateDesktopToken()
+		if err != nil {
+			p.API.LogError("failed to generate desktop token", "error", err.Error())
+			p.writeFriendlyError(w, http.StatusInternalServerError, "Unable to complete desktop login", "We couldn't generate the required token. Please try again.")
+			return
+		}
+
+		if err := p.saveDesktopToken(serverToken, user.Id); err != nil {
+			p.API.LogError("failed to save desktop token", "error", err.Error())
+			p.writeFriendlyError(w, http.StatusInternalServerError, "Unable to complete desktop login", "We couldn't store the desktop token. Please try again.")
+			return
+		}
+
+		// Build redirect URL for desktop
+		queryParams := url.Values{}
+		queryParams.Set("client_token", session.DesktopToken)
+		queryParams.Set("server_token", serverToken)
+		if session.RedirectTo != "" {
+			queryParams.Set("redirect_to", session.RedirectTo)
+		}
+		if strings.HasPrefix(session.DesktopToken, "dev-") {
+			queryParams.Set("isDesktopDev", "true")
+		}
+
+		redirectURL := cfg.RedirectURL
+		if parsed, parseErr := url.Parse(redirectURL); parseErr == nil {
+			parsed.Path = fmt.Sprintf("/plugins/%s/login/desktop", pluginID)
+			parsed.RawQuery = queryParams.Encode()
+			redirectURL = parsed.String()
+		} else {
+			// Fallback if URL parsing fails
+			redirectURL = fmt.Sprintf("%s?%s", fmt.Sprintf("/plugins/%s/login/desktop", pluginID), queryParams.Encode())
+		}
+
+		p.API.LogDebug("desktop authentication successful, redirecting", "sub", profile.Subject, "user_id", user.Id)
+		http.Redirect(w, r, redirectURL, http.StatusFound)
+		return
+	}
+
+	// Standard web/mobile flow
 	createdSession, err := p.completeLogin(w, r, user, cfg)
 	if err != nil {
 		p.API.LogError("failed to complete login", "state", state, "error", err.Error())
