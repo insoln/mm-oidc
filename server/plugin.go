@@ -531,8 +531,8 @@ func (p *Plugin) handleMobileLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	p.API.LogDebug("redirecting to OIDC provider for mobile login", "state", state, "redirect_to", redirectTo)
-	http.Redirect(w, r, authorizeURL, http.StatusFound)
+	p.API.LogDebug("rendering mobile login page with authorization URL", "state", state, "redirect_to", redirectTo)
+	renderMobileLoginPage(w, authorizeURL)
 }
 
 func (p *Plugin) handleMobileCallback(w http.ResponseWriter, r *http.Request) {
@@ -1010,6 +1010,102 @@ func buildMobileRedirectURL(appURL, sessionToken, csrfToken string) string {
 	parsed.RawQuery = q.Encode()
 
 	return parsed.String()
+}
+
+func renderMobileLoginPage(w http.ResponseWriter, authorizationURL string) {
+	escapedURL := htmlEscape(authorizationURL)
+
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	fmt.Fprintf(w, `<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=1.0, user-scalable=yes, viewport-fit=cover">
+	<title>Opening Browser for Authentication</title>
+	<style>
+		body {
+			color: #333;
+			background-color: #fff;
+			font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+			margin: 0;
+			padding: 2rem;
+			text-align: center;
+		}
+		.container {
+			max-width: 600px;
+			margin: 4rem auto;
+			padding: 2rem;
+		}
+		svg {
+			width: 64px;
+			height: 64px;
+			fill: #38bdf8;
+			margin-bottom: 1rem;
+		}
+		h1 {
+			font-size: 1.75rem;
+			margin: 1rem 0;
+			color: #333;
+		}
+		p {
+			line-height: 1.6;
+			margin: 1rem 0;
+			color: #666;
+		}
+		a {
+			display: inline-block;
+			margin-top: 1rem;
+			padding: 0.75rem 1.5rem;
+			background: #38bdf8;
+			color: #fff;
+			text-decoration: none;
+			border-radius: 999px;
+			font-weight: 600;
+		}
+		a:hover {
+			opacity: 0.9;
+			transform: translateY(-1px);
+		}
+		.notice {
+			margin-top: 2rem;
+			padding: 1rem;
+			background: #f0f9ff;
+			border-left: 3px solid #38bdf8;
+			border-radius: 8px;
+			color: #0369a1;
+			font-size: 0.9rem;
+		}
+	</style>
+</head>
+<body>
+	<div class="container">
+		<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+			<path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path>
+			<polyline points="15 3 21 3 21 9"></polyline>
+			<line x1="10" y1="14" x2="21" y2="3"></line>
+		</svg>
+		<h1>Opening Browser</h1>
+		<p>Your default browser should open automatically for authentication.</p>
+		<p><a href="%s" target="_blank" rel="noopener noreferrer">Click here to open browser manually</a></p>
+		<div class="notice">
+			After authenticating in your browser, you will be redirected back to the application automatically.
+		</div>
+	</div>
+	<script>
+		// Attempt to open the authorization URL in a new window
+		// The desktop app should intercept this and open it in the system browser
+		window.onload = function() {
+			// Try to open immediately
+			var opened = window.open('%s', '_blank');
+			
+			// If popup was blocked or failed, the user can still click the link
+			if (!opened || opened.closed || typeof opened.closed === 'undefined') {
+				console.log('Please click the link to continue authentication');
+			}
+		};
+	</script>
+</body>
+</html>`, escapedURL, escapedURL)
 }
 
 func renderMobileAuthComplete(w http.ResponseWriter, redirectURL string) {

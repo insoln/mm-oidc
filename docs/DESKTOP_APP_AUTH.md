@@ -16,32 +16,37 @@ This implementation matches the native Mattermost OAuth flow used in Mattermost 
 │     App      │                │              │                │   (OIDC)     │
 └──────┬───────┘                └──────┬───────┘                └──────┬───────┘
        │                               │                               │
-       │ 1. Open browser               │                               │
+       │ 1. Load /login/mobile         │                               │
        ├──────────────────────────────>│                               │
-       │ /login/mobile?redirect_to=... │                               │
+       │   in embedded webview         │                               │
        │                               │                               │
-       │                               │ 2. Redirect to OIDC provider  │
-       │                               ├──────────────────────────────>│
+       │ 2. HTML page with JS          │                               │
+       │<──────────────────────────────┤                               │
+       │   window.open(auth_url)       │                               │
        │                               │                               │
-       │                               │ 3. User authenticates         │
+       │ 3. window.open intercepted    │                               │
+       │    opens system browser ──────┼──────────────────────────────>│
+       │                               │   Authorization URL           │
+       │                               │                               │
+       │                               │ 4. User authenticates         │
        │                               │<──────────────────────────────┤
        │                               │                               │
-       │                               │ 4. Auth code + state          │
+       │                               │ 5. Auth code + state          │
        │                               │<──────────────────────────────┤
        │                               │                               │
-       │                               │ 5. POST to /callback/mobile   │
+       │                               │ 6. POST to /callback/mobile   │
        │                               ├──────────────────────────────>│
        │                               │    (exchange code for tokens) │
        │                               │                               │
-       │                               │ 6. HTML page with redirect    │
+       │                               │ 7. HTML page with redirect    │
        │                               │<───────────────────────────────
        │                               │    mattermost://auth?token=..  │
        │                               │                               │
-       │ 7. Protocol handler invoked   │                               │
+       │ 8. Protocol handler invoked   │                               │
        │<──────────────────────────────┤                               │
        │   mattermost://auth?token=... │                               │
        │                               │                               │
-       │ 8. Session established        │                               │
+       │ 9. Session established        │                               │
        │                               │                               │
 ```
 
@@ -76,12 +81,18 @@ Your desktop application must:
 https://mattermost.example.com/plugins/com.mm.oidc/login/mobile?redirect_to=mattermost://auth/complete
 ```
 
+**Behavior:**
+- The endpoint returns an HTML page (not a redirect)
+- The page contains JavaScript that automatically attempts to open the authorization URL in the system browser
+- The page also displays a clickable link as a fallback
+- The desktop app's webview displays this page, and the `window.open()` call triggers the desktop app to open the URL externally
+
 ### 3. Desktop App Implementation Example
 
 #### JavaScript/Electron Example
 
 ```javascript
-const { shell } = require('electron');
+const { shell, BrowserWindow } = require('electron');
 const url = require('url');
 
 // Step 1: Generate and store a random state for security
@@ -94,8 +105,25 @@ const pluginId = 'com.mm.oidc';
 const redirectTo = encodeURIComponent('mattermost://auth/complete');
 const loginUrl = `${mattermostUrl}/plugins/${pluginId}/login/mobile?redirect_to=${redirectTo}`;
 
-// Step 3: Open the default browser
-shell.openExternal(loginUrl);
+// Step 3: Load the login page in a webview or window
+// The page will automatically trigger opening the browser
+const loginWindow = new BrowserWindow({
+  width: 600,
+  height: 700,
+  webPreferences: {
+    nodeIntegration: false,
+    contextIsolation: true
+  }
+});
+
+// Intercept new-window events to open external browser
+loginWindow.webContents.setWindowOpenHandler(({ url }) => {
+  // Open authorization URLs in system browser
+  shell.openExternal(url);
+  return { action: 'deny' }; // Don't open in app
+});
+
+loginWindow.loadURL(loginUrl);
 
 // Step 4: Register protocol handler (in main process)
 app.setAsDefaultProtocolClient('mattermost');

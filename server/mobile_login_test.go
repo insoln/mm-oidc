@@ -210,6 +210,43 @@ func TestHandleMobileLoginInvalidRedirectTo(t *testing.T) {
 	}
 }
 
+func TestRenderMobileLoginPage(t *testing.T) {
+	w := httptest.NewRecorder()
+	authURL := "https://keycloak.example.com/auth?client_id=test&redirect_uri=http://localhost:8065/callback/mobile"
+
+	renderMobileLoginPage(w, authURL)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("renderMobileLoginPage() status = %d, want %d", w.Code, http.StatusOK)
+	}
+
+	body := w.Body.String()
+	expectedParts := []string{
+		"Opening Browser",
+		"Your default browser should open automatically",
+		"window.open",
+		"keycloak.example.com",
+		"Click here to open browser manually",
+	}
+
+	for _, part := range expectedParts {
+		if !contains(body, part) {
+			t.Errorf("renderMobileLoginPage() body missing %q", part)
+		}
+	}
+
+	contentType := w.Header().Get("Content-Type")
+	if contentType != "text/html; charset=utf-8" {
+		t.Errorf("renderMobileLoginPage() content-type = %q, want %q", contentType, "text/html; charset=utf-8")
+	}
+
+	// Verify it does NOT redirect (no Location header)
+	location := w.Header().Get("Location")
+	if location != "" {
+		t.Errorf("renderMobileLoginPage() should not set Location header, got %q", location)
+	}
+}
+
 func TestRenderMobileAuthComplete(t *testing.T) {
 	w := httptest.NewRecorder()
 	redirectURL := "mattermost://callback?token=abc123"
