@@ -16,16 +16,15 @@ This implementation matches the native Mattermost OAuth flow used in Mattermost 
 │     App      │                │              │                │   (OIDC)     │
 └──────┬───────┘                └──────┬───────┘                └──────┬───────┘
        │                               │                               │
-       │ 1. Load /login/mobile         │                               │
+       │ 1. Request /login/mobile      │                               │
        ├──────────────────────────────>│                               │
-       │   in embedded webview         │                               │
        │                               │                               │
-       │ 2. HTML page with JS          │                               │
+       │ 2. HTTP 302 Redirect          │                               │
        │<──────────────────────────────┤                               │
-       │   window.open(auth_url)       │                               │
+       │   Location: auth_url          │                               │
        │                               │                               │
-       │ 3. window.open intercepted    │                               │
-       │    opens system browser ──────┼──────────────────────────────>│
+       │ 3. Intercept redirect         │                               │
+       │    open system browser ───────┼──────────────────────────────>│
        │                               │   Authorization URL           │
        │                               │                               │
        │                               │ 4. User authenticates         │
@@ -82,31 +81,40 @@ https://mattermost.example.com/plugins/com.mm.oidc/login/mobile?redirect_to=matt
 ```
 
 **Behavior:**
-- The endpoint returns an HTML page (not a redirect)
-- The page contains JavaScript that automatically attempts to open the authorization URL in the system browser
-- The page also displays a clickable link as a fallback
-- The desktop app's webview displays this page, and the `window.open()` call triggers the desktop app to open the URL externally
+- The endpoint performs an HTTP 302 redirect to the OIDC authorization URL
+- Desktop apps should intercept this redirect and open the URL in the system browser
+- This matches Mattermost's native OAuth flow behavior
 
 ### 3. Desktop App Implementation Example
 
 #### JavaScript/Electron Example
 
 ```javascript
-const { shell, BrowserWindow } = require('electron');
-const url = require('url');
+const { shell, BrowserWindow, session } = require('electron');
 
-// Step 1: Generate and store a random state for security
-const state = generateRandomString(32);
-sessionStorage.setItem('oauth_state', state);
-
-// Step 2: Construct the login URL
+// Step 1: Construct the login URL
 const mattermostUrl = 'https://mattermost.example.com';
 const pluginId = 'com.mm.oidc';
 const redirectTo = encodeURIComponent('mattermost://auth/complete');
 const loginUrl = `${mattermostUrl}/plugins/${pluginId}/login/mobile?redirect_to=${redirectTo}`;
 
-// Step 3: Load the login page in a webview or window
-// The page will automatically trigger opening the browser
+// Step 2: Intercept redirects to OAuth provider
+// The key is to intercept the HTTP redirect before the webview navigates
+const ses = session.defaultSession;
+
+ses.webRequest.onBeforeRedirect((details, callback) => {
+  // Check if this is a redirect to an OAuth authorization endpoint
+  if (details.redirectURL && details.redirectURL.includes('/protocol/openid-connect/auth')) {
+    // Open in system browser instead of following redirect in webview
+    shell.openExternal(details.redirectURL);
+    
+    // Cancel the navigation in the webview
+    // Note: You may need to close the window or navigate to a loading page
+  }
+});
+
+// Step 3: Navigate to the mobile login endpoint
+// This will trigger the redirect which we intercept above
 const loginWindow = new BrowserWindow({
   width: 600,
   height: 700,
@@ -114,13 +122,6 @@ const loginWindow = new BrowserWindow({
     nodeIntegration: false,
     contextIsolation: true
   }
-});
-
-// Intercept new-window events to open external browser
-loginWindow.webContents.setWindowOpenHandler(({ url }) => {
-  // Open authorization URLs in system browser
-  shell.openExternal(url);
-  return { action: 'deny' }; // Don't open in app
 });
 
 loginWindow.loadURL(loginUrl);
