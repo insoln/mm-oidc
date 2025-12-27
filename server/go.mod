@@ -4,12 +4,14 @@ go 1.22.0
 
 toolchain go1.24.2
 
-require github.com/mattermost/mattermost/server/public v0.1.10
+require (
+	github.com/coreos/go-oidc/v3 v3.9.0
+	github.com/mattermost/mattermost/server/public v0.1.10
+)
 
 require (
 	filippo.io/edwards25519 v1.1.0 // indirect
 	github.com/blang/semver/v4 v4.0.0 // indirect
-	github.com/coreos/go-oidc/v3 v3.9.0 // indirect
 	github.com/dyatlov/go-opengraph/opengraph v0.0.0-20220524092352-606d7b1e5f8a // indirect
 	github.com/fatih/color v1.18.0 // indirect
 	github.com/francoispqt/gojay v1.2.13 // indirect
