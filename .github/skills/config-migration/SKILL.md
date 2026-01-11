@@ -61,7 +61,10 @@ mmctl config set PluginSettings.Plugins.com.mm.oidc --config oidc-config-backup.
 # Or restore individual settings
 mmctl config set PluginSettings.Plugins.com.mm.oidc.issuer_url "https://keycloak.example.com/realms/mattermost"
 mmctl config set PluginSettings.Plugins.com.mm.oidc.client_id "mm-oidc"
-mmctl config set PluginSettings.Plugins.com.mm.oidc.client_secret "$(vault kv get -field=secret secret/mm-oidc)"
+
+# Restore client secret securely without exposing it in shell history or process listings
+vault kv get -field=secret secret/mm-oidc | \
+  mmctl config set PluginSettings.Plugins.com.mm.oidc.client_secret --value-from-stdin
 ```
 
 ### Verify Configuration
@@ -147,8 +150,13 @@ jq '.issuer_url = "https://keycloak.example.com/realms/mattermost"' staging-conf
 jq '.redirect_url = "https://chat.example.com/plugins/com.mm.oidc/callback"' prod-config.json > prod-config.json
 jq '.client_id = "mm-oidc-prod"' prod-config.json > prod-config.json
 
-# Import production client secret from vault
-jq --arg secret "$(vault kv get -field=secret secret/mm-oidc-prod)" '.client_secret = $secret' prod-config.json > prod-config.json
+# Import production client secret from vault securely
+# Using temporary file with restricted permissions to avoid command line exposure
+vault kv get -field=secret secret/mm-oidc-prod > /tmp/secret.tmp
+chmod 600 /tmp/secret.tmp
+jq --rawfile secret /tmp/secret.tmp '.client_secret = $secret' prod-config.json > prod-config-final.json
+rm -f /tmp/secret.tmp
+mv prod-config-final.json prod-config.json
 
 # Import to production
 mmctl --server https://chat.example.com config set PluginSettings.Plugins.com.mm.oidc --config prod-config.json
