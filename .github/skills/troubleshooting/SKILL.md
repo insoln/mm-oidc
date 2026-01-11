@@ -256,12 +256,21 @@ curl -i "${AUTH_URL}?${PARAMS}"
 
 # 2. Exchange code for tokens
 TOKEN_URL="https://keycloak.example.com/realms/mattermost/protocol/openid-connect/token"
-curl -X POST ${TOKEN_URL} \
+
+# Store client secret in a protected file to avoid exposing it in process arguments
+echo -n 'your-real-client-secret' > /tmp/client-secret.txt
+chmod 600 /tmp/client-secret.txt
+
+# Exchange the authorization code for tokens
+curl -X POST "${TOKEN_URL}" \
   -d grant_type=authorization_code \
   -d client_id=mm-oidc \
-  -d client_secret=<secret> \
   -d code=<code> \
-  -d redirect_uri=https://chat.example.com/plugins/com.mm.oidc/callback
+  -d redirect_uri=https://chat.example.com/plugins/com.mm.oidc/callback \
+  --data-urlencode client_secret@/tmp/client-secret.txt
+
+# Clean up
+rm -f /tmp/client-secret.txt
 ```
 
 ## Performance Issues

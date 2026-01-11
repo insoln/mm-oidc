@@ -255,21 +255,28 @@ gh release view v0.0.3
 ### Using API
 
 ```bash
-# Create release
-curl -X POST \
-  -H "Authorization: token $GITHUB_TOKEN" \
-  -H "Accept: application/vnd.github.v3+json" \
-  https://api.github.com/repos/insoln/mm-oidc/releases \
-  -d '{
-    "tag_name": "v0.0.3",
-    "name": "v0.0.3",
-    "body": "Release notes here",
-    "draft": false,
-    "prerelease": false
-  }'
+# Create release via GitHub API using gh CLI (auth handled securely, no token in process args)
+gh api \
+  --method POST \
+  -H "Accept: application/vnd.github+json" \
+  /repos/insoln/mm-oidc/releases \
+  -f tag_name="v0.0.3" \
+  -f name="v0.0.3" \
+  -f body="$(cat RELEASE_NOTES.md)" \
+  -F draft=false \
+  -F prerelease=false
 
 # Upload artifact
-# (Use release upload URL from response)
+gh release upload v0.0.3 build/plugins/mm-oidc.tar.gz
+
+# Alternative: If you must use curl, read token from file to avoid process exposure
+# echo "$GITHUB_TOKEN" > /tmp/gh-token.txt && chmod 600 /tmp/gh-token.txt
+# curl -X POST \
+#   -H "Authorization: token $(cat /tmp/gh-token.txt)" \
+#   -H "Accept: application/vnd.github.v3+json" \
+#   https://api.github.com/repos/insoln/mm-oidc/releases \
+#   -d @release-payload.json
+# rm -f /tmp/gh-token.txt
 ```
 
 ## Post-Release Validation
